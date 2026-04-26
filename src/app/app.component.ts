@@ -7,7 +7,7 @@ interface GameNode {
   x: number;
   y: number;
   troops: number;
-  owner: 'player' | 'enemy' | 'neutral';
+  owner: 'player' | 'enemy' | 'neutral' | 'ai_macro' | 'ai_micro';
 }
 
 interface TroopMovement {
@@ -17,8 +17,8 @@ interface TroopMovement {
   targetX: number;
   targetY: number;
   amount: number;
-  owner: 'player' | 'enemy' | 'neutral';
-  progress: number; // 0 to 1
+  owner: 'player' | 'enemy' | 'neutral' | 'ai_macro' | 'ai_micro';
+  progress: number;
   targetNodeId: number;
 }
 
@@ -47,7 +47,7 @@ interface TroopMovement {
 })
 export class AppComponent implements OnInit, OnDestroy {
   showSplash = true;
-  gameState: 'menu' | 'playing' | 'gameover' = 'menu';
+  gameState: 'menu' | 'playing' | 'gameover' | 'simulation' = 'menu';
   nodes: GameNode[] = [];
   movements: TroopMovement[] = [];
   movementIdCounter = 0;
@@ -60,6 +60,10 @@ export class AppComponent implements OnInit, OnDestroy {
   gameLoop: any;
   lastTick = 0;
 
+  // AI Orchestrator Timers
+  lastMicroTick = 0;
+  lastMacroTick = 0;
+
   ngOnInit() {
     setTimeout(() => {
       this.showSplash = false;
@@ -70,17 +74,34 @@ export class AppComponent implements OnInit, OnDestroy {
     this.stopGame();
   }
 
-  startGame() {
-    this.gameState = 'playing';
-    this.nodes = [
-      { id: 1, x: 20, y: 80, troops: 50000, owner: 'player' },
-      { id: 2, x: 80, y: 20, troops: 50000, owner: 'enemy' },
-      { id: 3, x: 50, y: 50, troops: 10000, owner: 'neutral' },
-      { id: 4, x: 20, y: 20, troops: 20000, owner: 'neutral' },
-      { id: 5, x: 80, y: 80, troops: 20000, owner: 'neutral' }
-    ];
+  startGame(mode: 'player' | 'simulation' = 'player') {
+    this.gameState = mode === 'simulation' ? 'simulation' : 'playing';
+    
+    if (mode === 'player') {
+      this.nodes = [
+        { id: 1, x: 20, y: 80, troops: 50000, owner: 'player' },
+        { id: 2, x: 80, y: 20, troops: 50000, owner: 'enemy' },
+        { id: 3, x: 50, y: 50, troops: 10000, owner: 'neutral' },
+        { id: 4, x: 20, y: 20, troops: 20000, owner: 'neutral' },
+        { id: 5, x: 80, y: 80, troops: 20000, owner: 'neutral' }
+      ];
+    } else {
+      // Simulation mode: High APM vs Macro Strategy
+      this.nodes = [
+        { id: 1, x: 10, y: 10, troops: 50000, owner: 'ai_micro' },
+        { id: 2, x: 90, y: 90, troops: 50000, owner: 'ai_macro' },
+        { id: 3, x: 50, y: 50, troops: 10000, owner: 'neutral' },
+        { id: 4, x: 10, y: 50, troops: 5000, owner: 'neutral' },
+        { id: 5, x: 50, y: 10, troops: 5000, owner: 'neutral' },
+        { id: 6, x: 90, y: 50, troops: 5000, owner: 'neutral' },
+        { id: 7, x: 50, y: 90, troops: 5000, owner: 'neutral' },
+      ];
+    }
+
     this.movements = [];
     this.lastTick = performance.now();
+    this.lastMicroTick = this.lastTick;
+    this.lastMacroTick = this.lastTick;
     this.gameLoop = requestAnimationFrame((t) => this.tick(t));
   }
 
@@ -89,7 +110,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   formatTroops(amount: number): string {
-    if (amount < 1000) return amount.toString();
+    if (amount < 1000) return Math.floor(amount).toString();
     if (amount < 1000000) return (amount / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
     return (amount / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
   }
@@ -98,39 +119,33 @@ export class AppComponent implements OnInit, OnDestroy {
     const dt = (time - this.lastTick) / 1000;
     this.lastTick = time;
 
-    // Generate troops
+    // Generar tropas: 15K por segundo para hacer el juego frenético
     this.nodes.forEach(n => {
       if (n.owner !== 'neutral') {
-        n.troops += 5000 * dt; // 5K troops per second
+        n.troops += 15000 * dt; 
       }
     });
 
-    // Move troops
+    // Mover tropas (velocidad ajustada a 1 segundo para cruzar)
     for (let i = this.movements.length - 1; i >= 0; i--) {
       const m = this.movements[i];
-      m.progress += 0.5 * dt; // 2 seconds to reach target
+      m.progress += 1.0 * dt; 
       if (m.progress >= 1) {
         this.resolveCombat(m);
         this.movements.splice(i, 1);
       }
     }
 
-    // Basic Enemy AI
-    if (Math.random() < 0.01) { // roughly 1 action per second
-      const enemies = this.nodes.filter(n => n.owner === 'enemy');
-      if (enemies.length > 0) {
-        const source = enemies[Math.floor(Math.random() * enemies.length)];
-        if (source.troops > 20000) {
-          const targets = this.nodes.filter(n => n.id !== source.id);
-          const target = targets[Math.floor(Math.random() * targets.length)];
-          this.sendTroops(source, target);
-        }
-      }
+    // Agent Orchestrator Logic
+    if (this.gameState === 'playing') {
+      this.runBasicEnemyAI();
+    } else if (this.gameState === 'simulation') {
+      this.runSimulationAI(time);
     }
 
     this.checkWinCondition();
 
-    if (this.gameState === 'playing') {
+    if (this.gameState === 'playing' || this.gameState === 'simulation') {
       this.gameLoop = requestAnimationFrame((t) => this.tick(t));
     }
   }
@@ -150,19 +165,83 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
-  checkWinCondition() {
-    const hasPlayer = this.nodes.some(n => n.owner === 'player');
-    const hasEnemy = this.nodes.some(n => n.owner === 'enemy');
+  runBasicEnemyAI() {
+    if (Math.random() < 0.02) { 
+      const enemies = this.nodes.filter(n => n.owner === 'enemy');
+      if (enemies.length > 0) {
+        const source = enemies[Math.floor(Math.random() * enemies.length)];
+        if (source.troops > 20000) {
+          const targets = this.nodes.filter(n => n.id !== source.id);
+          const target = targets[Math.floor(Math.random() * targets.length)];
+          this.sendTroops(source, target);
+        }
+      }
+    }
+  }
 
-    if (!hasPlayer || !hasEnemy) {
-      this.gameState = 'gameover';
-      this.stopGame();
+  // --- ORQUESTADOR DE AGENTES (IA) ---
+  runSimulationAI(time: number) {
+    // 1. AI Frenética (High APM - Micro)
+    // Actúa cada 300ms. Manda enjambres pequeños al nodo enemigo/neutral más cercano.
+    if (time - this.lastMicroTick > 300) {
+      this.lastMicroTick = time;
+      const microNodes = this.nodes.filter(n => n.owner === 'ai_micro');
+      microNodes.forEach(source => {
+        if (source.troops > 10000) {
+          // Find closest non-micro node
+          let closest: GameNode | null = null;
+          let minD = Infinity;
+          this.nodes.filter(n => n.owner !== 'ai_micro').forEach(target => {
+             const d = Math.hypot(target.x - source.x, target.y - source.y);
+             if (d < minD) { minD = d; closest = target; }
+          });
+          if (closest) this.sendTroops(source, closest, 0.2); // Envia 20% rápido
+        }
+      });
+    }
+
+    // 2. AI Gran Estrategia (Macro)
+    // Actúa cada 2000ms. Espera a acumular millones, y luego lanza un ataque devastador coordinado al jugador más fuerte.
+    if (time - this.lastMacroTick > 2000) {
+      this.lastMacroTick = time;
+      const macroNodes = this.nodes.filter(n => n.owner === 'ai_macro');
+      let totalTroops = macroNodes.reduce((acc, n) => acc + n.troops, 0);
+      
+      if (totalTroops > 150000) {
+        // Encontrar la amenaza más grande
+        let biggestThreat = this.nodes.filter(n => n.owner !== 'ai_macro' && n.owner !== 'neutral')
+          .sort((a,b) => b.troops - a.troops)[0];
+        
+        if (!biggestThreat) {
+           biggestThreat = this.nodes.filter(n => n.owner === 'neutral').sort((a,b) => b.troops - a.troops)[0];
+        }
+
+        if (biggestThreat) {
+          // Ataque masivo desde todos los nodos de Macro al unísono
+          macroNodes.forEach(source => {
+            this.sendTroops(source, biggestThreat, 0.8); // Envía 80%
+          });
+        }
+      }
+    }
+  }
+
+  checkWinCondition() {
+    if (this.gameState === 'playing') {
+      const hasPlayer = this.nodes.some(n => n.owner === 'player');
+      const hasEnemy = this.nodes.some(n => n.owner === 'enemy');
+      if (!hasPlayer || !hasEnemy) { this.gameState = 'gameover'; this.stopGame(); }
+    } else if (this.gameState === 'simulation') {
+      const hasMicro = this.nodes.some(n => n.owner === 'ai_micro');
+      const hasMacro = this.nodes.some(n => n.owner === 'ai_macro');
+      if (!hasMicro || !hasMacro) { this.gameState = 'gameover'; this.stopGame(); }
     }
   }
 
   // Touch handlers
   onTouchStart(e: TouchEvent | MouseEvent, node: GameNode) {
-    if (node.owner !== 'player') return;
+    if (node.owner !== 'player' && this.gameState !== 'simulation') return;
+    if (this.gameState === 'simulation') return; // Bloquear toques en simulador
     this.selectedNode = node;
     this.isDragging = true;
     this.updateDragPosition(e);
@@ -179,7 +258,7 @@ export class AppComponent implements OnInit, OnDestroy {
     
     const targetNode = this.getNodeAtPosition(this.dragCurrentX, this.dragCurrentY);
     if (targetNode && targetNode.id !== this.selectedNode.id) {
-      this.sendTroops(this.selectedNode, targetNode);
+      this.sendTroops(this.selectedNode, targetNode, 0.5); // Jugador manda el 50%
     }
     this.selectedNode = null;
   }
@@ -201,16 +280,13 @@ export class AppComponent implements OnInit, OnDestroy {
     for (const n of this.nodes) {
       const nx = (n.x / 100) * vw;
       const ny = (n.y / 100) * vh;
-      // 40px radius check
-      if (Math.hypot(nx - x, ny - y) < 40) {
-        return n;
-      }
+      if (Math.hypot(nx - x, ny - y) < 40) return n;
     }
     return null;
   }
 
-  sendTroops(source: GameNode, target: GameNode) {
-    const amount = Math.floor(source.troops / 2);
+  sendTroops(source: GameNode, target: GameNode, percentage: number = 0.5) {
+    const amount = Math.floor(source.troops * percentage);
     if (amount <= 0) return;
     
     source.troops -= amount;
@@ -232,7 +308,10 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   getWinner(): string {
-    if (this.nodes.some(n => n.owner === 'player')) return '¡Victoria!';
-    return 'Derrota...';
+    if (this.gameState === 'playing') {
+      return this.nodes.some(n => n.owner === 'player') ? '¡Victoria Jugador!' : 'Derrota...';
+    } else {
+      return this.nodes.some(n => n.owner === 'ai_micro') ? '¡Victoria AI Micro/APM!' : '¡Victoria AI Macro!';
+    }
   }
 }

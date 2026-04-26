@@ -16,19 +16,20 @@
   <!-- MAIN MENU -->
   <div *ngIf="!showSplash && gameState === 'menu'" class="menu-screen">
     <h1 class="game-title neon-text">DOTS</h1>
-    <button class="btn-play" (click)="startGame()">Jugar Ahora</button>
+    <button class="btn-play" (click)="startGame('player')">Jugar Ahora</button>
+    <button class="btn-play btn-sim" (click)="startGame('simulation')">Simulador IAs (Macro vs Micro)</button>
     <button class="btn-secondary" (click)="openBabylon()">Créditos a BABYLON.IA</button>
   </div>
 
   <!-- GAME OVER -->
   <div *ngIf="!showSplash && gameState === 'gameover'" class="menu-screen">
     <h1 class="game-title neon-text">{{ getWinner() }}</h1>
-    <button class="btn-play" (click)="startGame()">Jugar de Nuevo</button>
+    <button class="btn-play" (click)="startGame('player')">Jugar de Nuevo</button>
     <button class="btn-secondary" (click)="gameState = 'menu'">Menú Principal</button>
   </div>
 
   <!-- PLAYING FIELD -->
-  <div *ngIf="!showSplash && gameState === 'playing'" class="playing-field">
+  <div *ngIf="!showSplash && (gameState === 'playing' || gameState === 'simulation')" class="playing-field">
     
     <!-- Drag Line -->
     <svg class="drag-line-layer" *ngIf="isDragging && selectedNode">
