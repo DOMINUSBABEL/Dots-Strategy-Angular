@@ -16,8 +16,8 @@
   <!-- MAIN MENU -->
   <div *ngIf="!showSplash && gameState === 'menu'" class="menu-screen">
     <h1 class="game-title neon-text">DOTS</h1>
-    <button class="btn-play" (click)="startGame('player')">Jugar Ahora</button>
-    <button class="btn-play btn-sim" (click)="startGame('simulation')">Simulador IAs (Macro vs Micro)</button>
+    <button class="btn-play" (click)="startGame('player')">Campaña Táctica</button>
+    <button class="btn-play btn-sim" (click)="startGame('simulation')">Simulador IAs</button>
     <button class="btn-secondary" (click)="openBabylon()">Créditos a BABYLON.IA</button>
   </div>
 
@@ -26,6 +26,16 @@
     <h1 class="game-title neon-text">{{ getWinner() }}</h1>
     <button class="btn-play" (click)="startGame('player')">Jugar de Nuevo</button>
     <button class="btn-secondary" (click)="gameState = 'menu'">Menú Principal</button>
+  </div>
+
+  <!-- TACTICAL HUD -->
+  <div *ngIf="!showSplash && gameState === 'playing'" class="tactical-hud">
+    <div class="hud-panel">
+      <span>Enviar: </span>
+      <button [class.active]="sendPercentage === 0.25" (click)="setPercentage(0.25)">25%</button>
+      <button [class.active]="sendPercentage === 0.5" (click)="setPercentage(0.5)">50%</button>
+      <button [class.active]="sendPercentage === 1.0" (click)="setPercentage(1.0)">100%</button>
+    </div>
   </div>
 
   <!-- PLAYING FIELD -->
@@ -39,23 +49,24 @@
         [attr.x2]="dragCurrentX" 
         [attr.y2]="dragCurrentY" 
         stroke="#4fc3f7" 
-        stroke-width="3" 
-        stroke-dasharray="5,5"/>
+        stroke-width="4" 
+        stroke-dasharray="8,8"/>
     </svg>
 
     <!-- Troop Movements -->
     <div *ngFor="let m of movements" 
          class="troop-swarm"
-         [ngClass]="'swarm-' + m.owner"
+         [ngClass]="['swarm-' + m.owner, 'swarm-' + m.unitType]"
          [style.left]="(m.startX + (m.targetX - m.startX) * m.progress) + '%'"
          [style.top]="(m.startY + (m.targetY - m.startY) * m.progress) + '%'">
       {{ formatTroops(m.amount) }}
+      <div *ngIf="m.unitType === 'heavy'" class="heavy-indicator">🛡️</div>
     </div>
 
     <!-- Nodes -->
     <div *ngFor="let node of nodes" 
          class="node"
-         [ngClass]="'node-' + node.owner"
+         [ngClass]="['node-' + node.owner, 'type-' + node.type]"
          [class.selected]="selectedNode?.id === node.id"
          [style.left]="node.x + '%'"
          [style.top]="node.y + '%'"
@@ -64,6 +75,19 @@
       
       <div class="node-inner" [@troopPulse]="node.troops">
         <span class="troop-count">{{ formatTroops(node.troops) }}</span>
+        
+        <!-- Upgrade Button for Player -->
+        <div *ngIf="node.owner === 'player' && node.level < 5" 
+             class="upgrade-btn" 
+             (click)="upgradeNode(node, $event)"
+             (touchstart)="upgradeNode(node, $event)">
+             LVL {{node.level}} <br> ⬆️ {{getCost(node)}}
+        </div>
+      </div>
+      
+      <!-- Node Status UI (Capacity warnings) -->
+      <div class="node-status" *ngIf="node.troops > node.capacity">
+        ⚠️ Sobrepoblación
       </div>
     </div>
   </div>

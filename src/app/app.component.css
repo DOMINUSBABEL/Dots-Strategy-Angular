@@ -11,117 +11,102 @@
   color: #fff;
   text-shadow: 0 0 10px #4fc3f7, 0 0 20px #4fc3f7, 0 0 40px #4fc3f7;
 }
+.game-title { font-size: 3.5rem; font-weight: 900; letter-spacing: 2px; margin-bottom: 10px; text-align: center; }
 
-.game-title {
-  font-size: 3.5rem;
-  font-weight: 900;
-  letter-spacing: 2px;
-  margin-bottom: 10px;
-}
-
-/* Splash Screen */
+/* Splash Screen & Menus */
 .splash-screen {
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: #0b0f19;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 100;
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  background: #0b0f19; display: flex; justify-content: center; align-items: center; z-index: 100;
 }
 .splash-content { text-align: center; }
 .developed-by { color: #888; font-size: 1.2rem; margin-bottom: 5px; }
-.babylon-link { 
-  color: #bb86fc; font-size: 1.8rem; font-weight: bold; 
-  cursor: pointer; text-decoration: underline;
-}
+.babylon-link { color: #bb86fc; font-size: 1.8rem; font-weight: bold; cursor: pointer; text-decoration: underline; }
 
-/* Menus */
 .menu-screen {
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  z-index: 50;
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 50;
 }
-
 button {
-  background: transparent;
-  border: 2px solid #4fc3f7;
-  color: #4fc3f7;
-  padding: 15px 30px;
-  font-size: 1.5rem;
-  font-weight: bold;
-  border-radius: 30px;
-  margin: 10px;
-  cursor: pointer;
-  transition: all 0.2s;
-  text-transform: uppercase;
+  background: transparent; border: 2px solid #4fc3f7; color: #4fc3f7;
+  padding: 15px 30px; font-size: 1.5rem; font-weight: bold; border-radius: 30px; margin: 10px;
+  cursor: pointer; transition: all 0.2s; text-transform: uppercase;
 }
-button:active { background: #4fc3f7; color: #000; }
+button:active, button.active { background: #4fc3f7; color: #000; }
 .btn-secondary { border-color: #bb86fc; color: #bb86fc; font-size: 1.2rem; }
 .btn-secondary:active { background: #bb86fc; color: #000; }
+.btn-sim { border-color: #ffb74d; color: #ffb74d; }
+.btn-sim:active { background: #ffb74d; color: #000; }
+
+/* Tactical HUD */
+.tactical-hud {
+  position: absolute; top: 20px; width: 100%; display: flex; justify-content: center; z-index: 40; pointer-events: none;
+}
+.hud-panel {
+  background: rgba(0,0,0,0.7); border: 1px solid #4fc3f7; border-radius: 20px;
+  padding: 5px 15px; display: flex; align-items: center; pointer-events: auto;
+}
+.hud-panel span { font-weight: bold; margin-right: 10px; }
+.hud-panel button {
+  padding: 5px 10px; font-size: 1rem; margin: 0 5px; border-width: 1px; border-radius: 10px;
+}
 
 /* Playing Field */
-.playing-field {
-  width: 100%; height: 100%; position: relative;
-}
-
-/* SVG Line Layer */
-.drag-line-layer {
-  position: absolute;
-  top: 0; left: 0; width: 100%; height: 100%;
-  pointer-events: none;
-  z-index: 1;
-}
+.playing-field { width: 100%; height: 100%; position: relative; }
+.drag-line-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
 
 /* Nodes */
 .node {
-  position: absolute;
-  width: 80px; height: 80px;
-  margin-left: -40px; margin-top: -40px;
-  border-radius: 50%;
-  display: flex; justify-content: center; align-items: center;
-  cursor: pointer;
-  z-index: 10;
-  transition: box-shadow 0.2s;
+  position: absolute; width: 90px; height: 90px; margin-left: -45px; margin-top: -45px;
+  border-radius: 50%; display: flex; justify-content: center; align-items: center;
+  cursor: pointer; z-index: 10; transition: transform 0.2s, box-shadow 0.2s;
 }
 .node-inner {
-  width: 100%; height: 100%;
-  border-radius: 50%;
-  display: flex; justify-content: center; align-items: center;
-  background: rgba(255,255,255,0.1);
+  width: 100%; height: 100%; border-radius: 50%; position: relative;
+  display: flex; justify-content: center; align-items: center; background: rgba(255,255,255,0.1);
 }
-.troop-count {
-  font-size: 1.3rem; font-weight: bold; color: white;
-  text-shadow: 0 2px 4px rgba(0,0,0,0.8);
-}
+.troop-count { font-size: 1.4rem; font-weight: 900; color: white; text-shadow: 0 2px 4px rgba(0,0,0,0.8); }
 
-.node-player { 
-  border: 3px solid #4fc3f7; 
-  box-shadow: 0 0 15px #4fc3f7 inset, 0 0 20px #4fc3f7;
+/* Node Types (Terrain & Mechanics) */
+.type-city { border-radius: 50%; }
+.type-fortress { border-radius: 10px; transform: rotate(45deg); }
+.type-fortress .node-inner { transform: rotate(-45deg); } /* Keep text straight */
+.type-forge { border-radius: 0; }
+
+.node-player { border: 3px solid #4fc3f7; box-shadow: 0 0 15px #4fc3f7 inset, 0 0 20px #4fc3f7; }
+.node-enemy { border: 3px solid #ff5252; box-shadow: 0 0 15px #ff5252 inset, 0 0 20px #ff5252; }
+.node-ai_micro { border: 3px solid #b388ff; box-shadow: 0 0 15px #b388ff inset, 0 0 20px #b388ff; }
+.node-ai_macro { border: 3px solid #ffb74d; box-shadow: 0 0 15px #ffb74d inset, 0 0 20px #ffb74d; }
+.node-neutral { border: 3px solid #888; background: rgba(50,50,50,0.8); }
+.node.selected { transform: scale(1.15); z-index: 20;}
+.node.selected.type-fortress { transform: scale(1.15) rotate(45deg); }
+
+/* Node Upgrades */
+.upgrade-btn {
+  position: absolute; bottom: -30px; background: #333; border: 1px solid #4fc3f7;
+  border-radius: 10px; font-size: 0.7rem; font-weight: bold; padding: 2px 5px;
+  color: #fff; cursor: pointer; text-align: center; line-height: 1.1;
+  pointer-events: auto; /* Ensure it catches clicks inside the node */
 }
-.node-enemy { 
-  border: 3px solid #ff5252; 
-  box-shadow: 0 0 15px #ff5252 inset, 0 0 20px #ff5252;
+.upgrade-btn:active { background: #4fc3f7; color: #000; }
+
+.node-status {
+  position: absolute; top: -25px; color: #ff5252; font-weight: bold; font-size: 0.8rem;
+  text-shadow: 0 0 5px #000; width: 150px; text-align: center;
 }
-.node-neutral { 
-  border: 3px solid #888; 
-}
-.node.selected { transform: scale(1.1); }
 
 /* Troop Swarms */
 .troop-swarm {
-  position: absolute;
-  width: 40px; height: 40px;
-  margin-left: -20px; margin-top: -20px;
-  border-radius: 50%;
-  display: flex; justify-content: center; align-items: center;
-  font-size: 0.8rem; font-weight: bold;
-  z-index: 5;
-  pointer-events: none;
+  position: absolute; width: 45px; height: 45px; margin-left: -22.5px; margin-top: -22.5px;
+  border-radius: 50%; display: flex; flex-direction: column; justify-content: center; align-items: center;
+  font-size: 0.85rem; font-weight: 900; z-index: 5; pointer-events: none;
 }
-.swarm-player { background: rgba(79, 195, 247, 0.8); box-shadow: 0 0 10px #4fc3f7; color: #000; }
-.swarm-enemy { background: rgba(255, 82, 82, 0.8); box-shadow: 0 0 10px #ff5252; color: #fff; }
+.swarm-player { background: rgba(79, 195, 247, 0.9); box-shadow: 0 0 10px #4fc3f7; color: #000; }
+.swarm-enemy { background: rgba(255, 82, 82, 0.9); box-shadow: 0 0 10px #ff5252; color: #fff; }
+.swarm-ai_micro { background: rgba(179, 136, 255, 0.9); box-shadow: 0 0 10px #b388ff; color: #fff; }
+.swarm-ai_macro { background: rgba(255, 183, 77, 0.9); box-shadow: 0 0 10px #ffb74d; color: #000; }
+.swarm-neutral { background: rgba(150, 150, 150, 0.9); color: #fff; }
+
+.swarm-heavy {
+  border: 3px solid #fff; border-radius: 10px; width: 50px; height: 50px;
+}
+.heavy-indicator { font-size: 0.6rem; margin-top: -2px;}
