@@ -1,0 +1,70 @@
+<div class="game-container" 
+     (mousemove)="onTouchMove($event)" 
+     (mouseup)="onTouchEnd($event)" 
+     (touchmove)="onTouchMove($event)" 
+     (touchend)="onTouchEnd($event)">
+
+  <!-- SPLASH SCREEN -->
+  <div *ngIf="showSplash" class="splash-screen" @splashFade>
+    <div class="splash-content">
+      <h1 class="game-title">DOTS STRATEGY</h1>
+      <p class="developed-by">Desarrollado por</p>
+      <a class="babylon-link" (click)="openBabylon()">BABYLON.IA</a>
+    </div>
+  </div>
+
+  <!-- MAIN MENU -->
+  <div *ngIf="!showSplash && gameState === 'menu'" class="menu-screen">
+    <h1 class="game-title neon-text">DOTS</h1>
+    <button class="btn-play" (click)="startGame()">Jugar Ahora</button>
+    <button class="btn-secondary" (click)="openBabylon()">Créditos a BABYLON.IA</button>
+  </div>
+
+  <!-- GAME OVER -->
+  <div *ngIf="!showSplash && gameState === 'gameover'" class="menu-screen">
+    <h1 class="game-title neon-text">{{ getWinner() }}</h1>
+    <button class="btn-play" (click)="startGame()">Jugar de Nuevo</button>
+    <button class="btn-secondary" (click)="gameState = 'menu'">Menú Principal</button>
+  </div>
+
+  <!-- PLAYING FIELD -->
+  <div *ngIf="!showSplash && gameState === 'playing'" class="playing-field">
+    
+    <!-- Drag Line -->
+    <svg class="drag-line-layer" *ngIf="isDragging && selectedNode">
+      <line 
+        [attr.x1]="selectedNode.x + '%'" 
+        [attr.y1]="selectedNode.y + '%'" 
+        [attr.x2]="dragCurrentX" 
+        [attr.y2]="dragCurrentY" 
+        stroke="#4fc3f7" 
+        stroke-width="3" 
+        stroke-dasharray="5,5"/>
+    </svg>
+
+    <!-- Troop Movements -->
+    <div *ngFor="let m of movements" 
+         class="troop-swarm"
+         [ngClass]="'swarm-' + m.owner"
+         [style.left]="(m.startX + (m.targetX - m.startX) * m.progress) + '%'"
+         [style.top]="(m.startY + (m.targetY - m.startY) * m.progress) + '%'">
+      {{ formatTroops(m.amount) }}
+    </div>
+
+    <!-- Nodes -->
+    <div *ngFor="let node of nodes" 
+         class="node"
+         [ngClass]="'node-' + node.owner"
+         [class.selected]="selectedNode?.id === node.id"
+         [style.left]="node.x + '%'"
+         [style.top]="node.y + '%'"
+         (mousedown)="onTouchStart($event, node)"
+         (touchstart)="onTouchStart($event, node)">
+      
+      <div class="node-inner" [@troopPulse]="node.troops">
+        <span class="troop-count">{{ formatTroops(node.troops) }}</span>
+      </div>
+    </div>
+  </div>
+
+</div>

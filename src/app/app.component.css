@@ -1,0 +1,127 @@
+.game-container {
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+  background-color: #0b0f19;
+  overflow: hidden;
+}
+
+/* Typography & Neons */
+.neon-text {
+  color: #fff;
+  text-shadow: 0 0 10px #4fc3f7, 0 0 20px #4fc3f7, 0 0 40px #4fc3f7;
+}
+
+.game-title {
+  font-size: 3.5rem;
+  font-weight: 900;
+  letter-spacing: 2px;
+  margin-bottom: 10px;
+}
+
+/* Splash Screen */
+.splash-screen {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: #0b0f19;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 100;
+}
+.splash-content { text-align: center; }
+.developed-by { color: #888; font-size: 1.2rem; margin-bottom: 5px; }
+.babylon-link { 
+  color: #bb86fc; font-size: 1.8rem; font-weight: bold; 
+  cursor: pointer; text-decoration: underline;
+}
+
+/* Menus */
+.menu-screen {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 50;
+}
+
+button {
+  background: transparent;
+  border: 2px solid #4fc3f7;
+  color: #4fc3f7;
+  padding: 15px 30px;
+  font-size: 1.5rem;
+  font-weight: bold;
+  border-radius: 30px;
+  margin: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-transform: uppercase;
+}
+button:active { background: #4fc3f7; color: #000; }
+.btn-secondary { border-color: #bb86fc; color: #bb86fc; font-size: 1.2rem; }
+.btn-secondary:active { background: #bb86fc; color: #000; }
+
+/* Playing Field */
+.playing-field {
+  width: 100%; height: 100%; position: relative;
+}
+
+/* SVG Line Layer */
+.drag-line-layer {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Nodes */
+.node {
+  position: absolute;
+  width: 80px; height: 80px;
+  margin-left: -40px; margin-top: -40px;
+  border-radius: 50%;
+  display: flex; justify-content: center; align-items: center;
+  cursor: pointer;
+  z-index: 10;
+  transition: box-shadow 0.2s;
+}
+.node-inner {
+  width: 100%; height: 100%;
+  border-radius: 50%;
+  display: flex; justify-content: center; align-items: center;
+  background: rgba(255,255,255,0.1);
+}
+.troop-count {
+  font-size: 1.3rem; font-weight: bold; color: white;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+}
+
+.node-player { 
+  border: 3px solid #4fc3f7; 
+  box-shadow: 0 0 15px #4fc3f7 inset, 0 0 20px #4fc3f7;
+}
+.node-enemy { 
+  border: 3px solid #ff5252; 
+  box-shadow: 0 0 15px #ff5252 inset, 0 0 20px #ff5252;
+}
+.node-neutral { 
+  border: 3px solid #888; 
+}
+.node.selected { transform: scale(1.1); }
+
+/* Troop Swarms */
+.troop-swarm {
+  position: absolute;
+  width: 40px; height: 40px;
+  margin-left: -20px; margin-top: -20px;
+  border-radius: 50%;
+  display: flex; justify-content: center; align-items: center;
+  font-size: 0.8rem; font-weight: bold;
+  z-index: 5;
+  pointer-events: none;
+}
+.swarm-player { background: rgba(79, 195, 247, 0.8); box-shadow: 0 0 10px #4fc3f7; color: #000; }
+.swarm-enemy { background: rgba(255, 82, 82, 0.8); box-shadow: 0 0 10px #ff5252; color: #fff; }

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Dots Strategy</string>
+    <string name="title_activity_main">Dots Strategy</string>
+    <string name="package_name">com.babylonia.dotsstrategy</string>
+    <string name="custom_url_scheme">com.babylonia.dotsstrategy</string>
+</resources>
