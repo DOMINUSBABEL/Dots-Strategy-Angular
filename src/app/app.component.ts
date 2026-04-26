@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy, HostListener } from '@angular/core';
 import { trigger, state, style, animate, transition, keyframes } from '@angular/animations';
 import { CommonModule } from '@angular/common';
 
-export type NodeType = 'city' | 'fortress' | 'forge';
+export type NodeType = 'city' | 'fortress' | 'forge' | 'camp';
 export type UnitType = 'light' | 'heavy';
 
 export interface GameNode {
@@ -26,7 +26,7 @@ export interface TroopMovement {
   owner: 'player' | 'enemy' | 'neutral' | 'ai_macro' | 'ai_micro';
   unitType: UnitType;
   progress: number;
-  targetNodeId: number;
+  targetNodeId: number | null;
 }
 
 @Component({
@@ -138,6 +138,7 @@ export class AppComponent implements OnInit, OnDestroy {
         let genRate = 2000 * n.level;
         if (n.type === 'forge') genRate *= 0.5; // Forges produce slower but make heavy troops
         if (n.type === 'fortress') genRate *= 0.3; // Fortresses produce very slowly
+        if (n.type === 'camp') genRate *= 0.0; // Camps do not generate troops
         
         n.troops += genRate * dt; 
 
@@ -176,6 +177,22 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   resolveCombat(movement: TroopMovement) {
+    if (movement.targetNodeId === null) {
+      // Reached empty space -> create a camp
+      const newNode: GameNode = {
+        id: Math.max(...this.nodes.map(n => n.id), 0) + 1,
+        x: movement.targetX,
+        y: movement.targetY,
+        troops: movement.amount,
+        owner: movement.owner,
+        type: 'camp',
+        level: 1,
+        capacity: 20000 // Small capacity for temporary camps
+      };
+      this.nodes.push(newNode);
+      return;
+    }
+
     const target = this.nodes.find(n => n.id === movement.targetNodeId);
     if (!target) return;
 
@@ -204,6 +221,9 @@ export class AppComponent implements OnInit, OnDestroy {
     if (event) event.stopPropagation();
     if (node.owner !== 'player') return;
     
+    // Camps cannot be upgraded
+    if (node.type === 'camp') return;
+    
     const cost = 10000 * node.level;
     if (node.troops >= cost && node.level < 5) {
       node.troops -= cost;
@@ -218,7 +238,7 @@ export class AppComponent implements OnInit, OnDestroy {
       if (enemies.length > 0) {
         const source = enemies[Math.floor(Math.random() * enemies.length)];
         // Upgrades if rich
-        if (source.troops > 15000 * source.level && source.level < 3) {
+        if (source.troops > 15000 * source.level && source.level < 3 && source.type !== 'camp') {
             source.troops -= 10000 * source.level;
             source.level++;
             source.capacity += 50000;
@@ -256,7 +276,7 @@ export class AppComponent implements OnInit, OnDestroy {
       
       // Macro AI prioritizes upgrading nodes first
       macroNodes.forEach(n => {
-          if (n.troops > 15000 * n.level && n.level < 4) {
+          if (n.troops > 15000 * n.level && n.level < 4 && n.type !== 'camp') {
               n.troops -= 10000 * n.level;
               n.level++;
               n.capacity += 50000;
@@ -312,6 +332,13 @@ export class AppComponent implements OnInit, OnDestroy {
     const targetNode = this.getNodeAtPosition(this.dragCurrentX, this.dragCurrentY);
     if (targetNode && targetNode.id !== this.selectedNode.id) {
       this.sendTroops(this.selectedNode, targetNode, this.sendPercentage);
+    } else if (!targetNode) {
+      // Free movement: Send to empty space
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const targetPercentX = (this.dragCurrentX / vw) * 100;
+      const targetPercentY = (this.dragCurrentY / vh) * 100;
+      this.sendTroopsToPoint(this.selectedNode, targetPercentX, targetPercentY, this.sendPercentage);
     }
     this.selectedNode = null;
   }
@@ -339,6 +366,14 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   sendTroops(source: GameNode, target: GameNode, percentage: number) {
+    this.createMovement(source, target.x, target.y, percentage, target.id);
+  }
+
+  sendTroopsToPoint(source: GameNode, targetX: number, targetY: number, percentage: number) {
+    this.createMovement(source, targetX, targetY, percentage, null);
+  }
+
+  private createMovement(source: GameNode, targetX: number, targetY: number, percentage: number, targetId: number | null) {
     const amount = Math.floor(source.troops * percentage);
     if (amount <= 0) return;
     
@@ -347,13 +382,13 @@ export class AppComponent implements OnInit, OnDestroy {
       id: this.movementIdCounter++,
       startX: source.x,
       startY: source.y,
-      targetX: target.x,
-      targetY: target.y,
+      targetX: targetX,
+      targetY: targetY,
       amount,
       owner: source.owner,
       unitType: source.type === 'forge' ? 'heavy' : 'light',
       progress: 0,
-      targetNodeId: target.id
+      targetNodeId: targetId
     });
   }
 

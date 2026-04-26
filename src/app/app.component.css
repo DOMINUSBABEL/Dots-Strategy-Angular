@@ -71,6 +71,7 @@ button:active, button.active { background: #4fc3f7; color: #000; }
 .type-fortress { border-radius: 10px; transform: rotate(45deg); }
 .type-fortress .node-inner { transform: rotate(-45deg); } /* Keep text straight */
 .type-forge { border-radius: 0; }
+.type-camp { border-radius: 20px; border-style: dashed; opacity: 0.8; }
 
 .node-player { border: 3px solid #4fc3f7; box-shadow: 0 0 15px #4fc3f7 inset, 0 0 20px #4fc3f7; }
 .node-enemy { border: 3px solid #ff5252; box-shadow: 0 0 15px #ff5252 inset, 0 0 20px #ff5252; }
