@@ -7,18 +7,26 @@
   background: radial-gradient(circle at center, #111522 0%, #05070a 100%);
   overflow: hidden;
   font-family: 'Rajdhani', sans-serif;
+  touch-action: none; /* Crucial for custom pan/zoom handling */
 }
 
-/* Strategic Grid Background */
-.game-container::before {
-  content: '';
+/* Strategic Grid Background that scales with camera */
+.playing-field {
   position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
+  top: 0; left: 0;
+  transform-origin: 0 0;
   background-image: 
-    linear-gradient(rgba(79, 195, 247, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(79, 195, 247, 0.05) 1px, transparent 1px);
-  background-size: 40px 40px;
-  z-index: 0;
+    linear-gradient(rgba(79, 195, 247, 0.05) 2px, transparent 2px),
+    linear-gradient(90deg, rgba(79, 195, 247, 0.05) 2px, transparent 2px);
+  background-size: 100px 100px;
+  will-change: transform;
+}
+
+.map-bounds {
+  position: absolute;
+  top: 0; left: 0;
+  border: 4px solid rgba(79, 195, 247, 0.2);
+  box-shadow: 0 0 50px rgba(79, 195, 247, 0.1) inset;
   pointer-events: none;
 }
 
@@ -51,7 +59,6 @@
   text-shadow: 0 0 10px rgba(187, 134, 252, 0.5);
   transition: all 0.3s ease;
 }
-.babylon-link:active { text-shadow: 0 0 20px #bb86fc; transform: scale(1.05); }
 
 .menu-screen {
   position: absolute; top: 0; left: 0; right: 0; bottom: 0;
@@ -63,7 +70,6 @@ button {
   background: rgba(0, 0, 0, 0.5); border: 2px solid #4fc3f7; color: #4fc3f7;
   padding: 15px 40px; font-size: 1.5rem; font-weight: 700; border-radius: 4px; margin: 10px;
   cursor: pointer; transition: all 0.2s; text-transform: uppercase; font-family: 'Rajdhani', sans-serif;
-  letter-spacing: 1px;
   box-shadow: 0 0 10px rgba(79, 195, 247, 0.2) inset, 0 0 10px rgba(79, 195, 247, 0.2);
   clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
 }
@@ -71,10 +77,10 @@ button:active, button.active {
   background: rgba(79, 195, 247, 0.2); 
   box-shadow: 0 0 20px rgba(79, 195, 247, 0.6) inset, 0 0 20px rgba(79, 195, 247, 0.4);
 }
-.btn-secondary { border-color: #bb86fc; color: #bb86fc; font-size: 1.2rem; box-shadow: 0 0 10px rgba(187, 134, 252, 0.2) inset, 0 0 10px rgba(187, 134, 252, 0.2); }
-.btn-secondary:active { background: rgba(187, 134, 252, 0.2); box-shadow: 0 0 20px rgba(187, 134, 252, 0.6) inset, 0 0 20px rgba(187, 134, 252, 0.4); }
+.btn-secondary { border-color: #bb86fc; color: #bb86fc; box-shadow: 0 0 10px rgba(187, 134, 252, 0.2) inset, 0 0 10px rgba(187, 134, 252, 0.2); }
+.btn-secondary:active { background: rgba(187, 134, 252, 0.2); }
 .btn-sim { border-color: #ffb74d; color: #ffb74d; box-shadow: 0 0 10px rgba(255, 183, 77, 0.2) inset, 0 0 10px rgba(255, 183, 77, 0.2);}
-.btn-sim:active { background: rgba(255, 183, 77, 0.2); box-shadow: 0 0 20px rgba(255, 183, 77, 0.6) inset, 0 0 20px rgba(255, 183, 77, 0.4);}
+.btn-sim:active { background: rgba(255, 183, 77, 0.2); }
 
 /* Tactical HUD */
 .tactical-hud {
@@ -87,93 +93,101 @@ button:active, button.active {
   box-shadow: 0 4px 6px rgba(0,0,0,0.5), 0 0 15px rgba(79, 195, 247, 0.2);
 }
 .hud-panel span { font-weight: 700; margin-right: 15px; color: #a0c4ff; text-transform: uppercase; font-size: 1.1rem; letter-spacing: 1px;}
-.hud-panel button {
-  padding: 5px 15px; font-size: 1.1rem; margin: 0 5px; border-width: 1px; border-radius: 4px;
-  clip-path: none; box-shadow: none;
-}
+.hud-panel button { padding: 5px 15px; font-size: 1.1rem; margin: 0 5px; clip-path: none; box-shadow: none; border-radius: 4px; }
 
-/* Playing Field */
-.playing-field { width: 100%; height: 100%; position: relative; z-index: 5; }
+/* SVG Line Layer */
 .drag-line-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; filter: drop-shadow(0 0 5px rgba(79, 195, 247, 0.8)); }
 
 /* Nodes */
 .node {
-  position: absolute; width: 90px; height: 90px; margin-left: -45px; margin-top: -45px;
+  position: absolute; width: 120px; height: 120px; margin-left: -60px; margin-top: -60px;
   border-radius: 50%; display: flex; justify-content: center; align-items: center;
-  cursor: pointer; z-index: 10; transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  cursor: pointer; z-index: 10;
+  will-change: left, top; /* For smooth physics pushes */
 }
 .node::before {
-  content: ''; position: absolute; top: -5px; left: -5px; right: -5px; bottom: -5px;
-  border-radius: inherit; border: 1px solid rgba(255,255,255,0.1); pointer-events: none;
+  content: ''; position: absolute; top: -8px; left: -8px; right: -8px; bottom: -8px;
+  border-radius: inherit; border: 2px solid rgba(255,255,255,0.1); pointer-events: none;
 }
 .node-inner {
   width: 100%; height: 100%; border-radius: inherit; position: relative;
   display: flex; justify-content: center; align-items: center; 
   background: radial-gradient(circle at center, rgba(255,255,255,0.15) 0%, rgba(0,0,0,0.4) 100%);
   backdrop-filter: blur(2px);
+  transition: transform 0.1s; /* For combat jitter */
 }
+.combating-node {
+  /* Visual shake when pushed/attacked */
+  transform: scale(0.95);
+  box-shadow: inset 0 0 30px rgba(255,255,255,0.5);
+}
+
 .troop-count { 
-  font-size: 1.5rem; font-weight: 700; color: #fff; 
+  font-size: 2rem; font-weight: 700; color: #fff; 
   text-shadow: 0 2px 4px rgba(0,0,0,1), 0 0 10px rgba(255,255,255,0.5); 
   font-family: 'Orbitron', sans-serif;
+  pointer-events: none;
 }
 
-/* Node Types (Terrain & Mechanics) */
+/* Node Types */
 .type-city { border-radius: 50%; }
-.type-fortress { border-radius: 15px; transform: rotate(45deg); }
-.type-fortress .node-inner { transform: rotate(-45deg); } /* Keep text straight */
-.type-forge { border-radius: 4px; }
-.type-camp { border-radius: 50%; border-style: dashed !important; border-width: 2px !important; opacity: 0.85; }
+.type-fortress { border-radius: 20px; transform: rotate(45deg); }
+.type-fortress .node-inner { transform: rotate(-45deg); } 
+.type-forge { border-radius: 8px; }
+.type-camp { border-radius: 50%; border-style: dashed !important; border-width: 4px !important; opacity: 0.85; }
 
-/* Faction Styling (Epic Glows) */
-.node-player { border: 2px solid #00e5ff; box-shadow: 0 0 20px rgba(0, 229, 255, 0.4) inset, 0 0 25px rgba(0, 229, 255, 0.6), 0 0 50px rgba(0, 229, 255, 0.2); }
-.node-enemy { border: 2px solid #ff1744; box-shadow: 0 0 20px rgba(255, 23, 68, 0.4) inset, 0 0 25px rgba(255, 23, 68, 0.6), 0 0 50px rgba(255, 23, 68, 0.2); }
-.node-ai_micro { border: 2px solid #d500f9; box-shadow: 0 0 20px rgba(213, 0, 249, 0.4) inset, 0 0 25px rgba(213, 0, 249, 0.6), 0 0 50px rgba(213, 0, 249, 0.2); }
-.node-ai_macro { border: 2px solid #ff9100; box-shadow: 0 0 20px rgba(255, 145, 0, 0.4) inset, 0 0 25px rgba(255, 145, 0, 0.6), 0 0 50px rgba(255, 145, 0, 0.2); }
-.node-neutral { border: 2px solid #78909c; background: rgba(30, 40, 50, 0.7); box-shadow: 0 0 15px rgba(120, 144, 156, 0.3); }
-.node.selected { transform: scale(1.2); z-index: 20;}
-.node.selected.type-fortress { transform: scale(1.2) rotate(45deg); }
+/* Factions */
+.node-player { border: 4px solid #00e5ff; box-shadow: 0 0 30px rgba(0, 229, 255, 0.4) inset, 0 0 40px rgba(0, 229, 255, 0.6); }
+.node-enemy { border: 4px solid #ff1744; box-shadow: 0 0 30px rgba(255, 23, 68, 0.4) inset, 0 0 40px rgba(255, 23, 68, 0.6); }
+.node-ai_micro { border: 4px solid #d500f9; box-shadow: 0 0 30px rgba(213, 0, 249, 0.4) inset, 0 0 40px rgba(213, 0, 249, 0.6); }
+.node-ai_macro { border: 4px solid #ff9100; box-shadow: 0 0 30px rgba(255, 145, 0, 0.4) inset, 0 0 40px rgba(255, 145, 0, 0.6); }
+.node-neutral { border: 4px solid #78909c; background: rgba(30, 40, 50, 0.7); box-shadow: 0 0 20px rgba(120, 144, 156, 0.3); }
 
-/* Node Upgrades */
+.node.selected { z-index: 20; }
+.node.selected .node-inner { border: 4px solid #fff; box-shadow: 0 0 50px #fff; }
+
+/* Upgrades */
 .upgrade-btn {
-  position: absolute; bottom: -35px; background: rgba(10, 15, 25, 0.9); border: 1px solid #00e5ff;
-  border-radius: 4px; font-size: 0.75rem; font-weight: 700; padding: 3px 8px;
+  position: absolute; bottom: -50px; background: rgba(10, 15, 25, 0.9); border: 2px solid #00e5ff;
+  border-radius: 6px; font-size: 1rem; font-weight: 700; padding: 5px 12px;
   color: #00e5ff; cursor: pointer; text-align: center; line-height: 1.2;
   pointer-events: auto; letter-spacing: 0.5px;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.8);
-  text-transform: uppercase;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.8); text-transform: uppercase;
 }
 .upgrade-btn:active { background: rgba(0, 229, 255, 0.3); color: #fff; }
 
 .node-status {
-  position: absolute; top: -30px; color: #ff1744; font-weight: 700; font-size: 0.85rem;
-  text-shadow: 0 0 5px #000, 0 0 10px #ff1744; width: 160px; text-align: center;
-  letter-spacing: 1px; text-transform: uppercase; font-family: 'Rajdhani', sans-serif;
-  animation: blink 1s infinite alternate;
+  position: absolute; top: -40px; color: #ff1744; font-weight: 700; font-size: 1.2rem;
+  text-shadow: 0 0 5px #000, 0 0 10px #ff1744; width: 200px; text-align: center;
+  letter-spacing: 1px; text-transform: uppercase; animation: blink 1s infinite alternate;
 }
 
-@keyframes blink {
-  from { opacity: 1; }
-  to { opacity: 0.5; }
-}
+@keyframes blink { from { opacity: 1; } to { opacity: 0.5; } }
 
 /* Troop Swarms */
 .troop-swarm {
-  position: absolute; width: 40px; height: 40px; margin-left: -20px; margin-top: -20px;
+  position: absolute; width: 60px; height: 60px; margin-left: -30px; margin-top: -30px;
   border-radius: 50%; display: flex; flex-direction: column; justify-content: center; align-items: center;
-  font-size: 0.85rem; font-weight: 700; z-index: 5; pointer-events: none;
-  font-family: 'Orbitron', sans-serif; text-shadow: 0 1px 2px #000;
-  transition: transform 0.1s;
+  font-size: 1.1rem; font-weight: 700; z-index: 5; pointer-events: none;
+  font-family: 'Orbitron', sans-serif; text-shadow: 0 2px 4px #000;
+  will-change: left, top;
 }
-.swarm-player { background: rgba(0, 229, 255, 0.8); box-shadow: 0 0 15px #00e5ff; color: #fff; border: 1px solid rgba(255,255,255,0.5);}
-.swarm-enemy { background: rgba(255, 23, 68, 0.8); box-shadow: 0 0 15px #ff1744; color: #fff; border: 1px solid rgba(255,255,255,0.5);}
-.swarm-ai_micro { background: rgba(213, 0, 249, 0.8); box-shadow: 0 0 15px #d500f9; color: #fff; border: 1px solid rgba(255,255,255,0.5);}
-.swarm-ai_macro { background: rgba(255, 145, 0, 0.8); box-shadow: 0 0 15px #ff9100; color: #fff; border: 1px solid rgba(255,255,255,0.5);}
-.swarm-neutral { background: rgba(120, 144, 156, 0.8); color: #fff; border: 1px solid rgba(255,255,255,0.5);}
+.combating { animation: combatJitter 0.2s infinite alternate; border-color: #fff !important; box-shadow: inset 0 0 20px #fff !important; }
+
+@keyframes combatJitter {
+  0% { transform: translate(-2px, -2px) scale(0.9); }
+  100% { transform: translate(2px, 2px) scale(1.1); }
+}
+
+.swarm-player { background: rgba(0, 229, 255, 0.8); box-shadow: 0 0 20px #00e5ff; color: #fff; border: 2px solid rgba(255,255,255,0.5);}
+.swarm-enemy { background: rgba(255, 23, 68, 0.8); box-shadow: 0 0 20px #ff1744; color: #fff; border: 2px solid rgba(255,255,255,0.5);}
+.swarm-ai_micro { background: rgba(213, 0, 249, 0.8); box-shadow: 0 0 20px #d500f9; color: #fff; border: 2px solid rgba(255,255,255,0.5);}
+.swarm-ai_macro { background: rgba(255, 145, 0, 0.8); box-shadow: 0 0 20px #ff9100; color: #fff; border: 2px solid rgba(255,255,255,0.5);}
+.swarm-neutral { background: rgba(120, 144, 156, 0.8); color: #fff; border: 2px solid rgba(255,255,255,0.5);}
 
 .swarm-heavy {
-  border: 2px solid #fff; border-radius: 8px; width: 46px; height: 46px;
+  border: 4px solid #fff; border-radius: 12px; width: 70px; height: 70px;
   background: linear-gradient(135deg, rgba(255,255,255,0.2) 0%, transparent 100%);
   backdrop-filter: blur(2px);
 }
-.heavy-indicator { font-size: 0.65rem; margin-top: -2px; opacity: 0.9;}
+.heavy-indicator { font-size: 0.8rem; margin-top: -2px; opacity: 0.9;}
