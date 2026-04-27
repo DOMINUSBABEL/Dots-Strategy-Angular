@@ -8,46 +8,27 @@ export type NodeType = 'city' | 'fortress' | 'forge' | 'camp';
 export type UnitType = 'light' | 'heavy';
 
 export interface GameNode {
-  id: number;
-  x: number; y: number;
-  troops: number;
+  id: number; x: number; y: number; troops: number;
   owner: 'player' | 'enemy' | 'neutral' | 'ai_macro' | 'ai_micro';
-  type: NodeType;
-  level: number; capacity: number;
+  type: NodeType; level: number; capacity: number;
   pushX: number; pushY: number;
 }
 
 export interface Flow {
-  id: number;
-  sourceId: number;
-  targetId: number | null;
-  targetX: number; targetY: number;
-  totalTroops: number;
-  troopsSent: number;
+  id: number; sourceId: number; targetId: number | null;
+  targetX: number; targetY: number; totalTroops: number; troopsSent: number;
   owner: 'player' | 'enemy' | 'neutral' | 'ai_macro' | 'ai_micro';
-  unitType: UnitType;
-  fractionalAccumulator: number;
-  troopsPerDot: number;
-  drainRate: number;
+  unitType: UnitType; fractionalAccumulator: number; troopsPerDot: number; drainRate: number;
 }
 
 export interface Dot {
-  id: number;
-  x: number; y: number;
-  targetId: number | null;
-  targetX: number; targetY: number;
-  owner: string;
-  troops: number;
-  unitType: UnitType;
-  flowId: number;
+  id: number; x: number; y: number; targetId: number | null;
+  targetX: number; targetY: number; owner: string; troops: number;
+  unitType: UnitType; flowId: number;
 }
 
 const FACTION_COLORS: Record<string, string> = {
-  'player': '#3498db',    // Clean flat blue
-  'enemy': '#e74c3c',     // Clean flat red
-  'ai_micro': '#9b59b6',  // Purple
-  'ai_macro': '#e67e22',  // Orange
-  'neutral': '#7f8c8d'    // Grey
+  'player': '#3498db', 'enemy': '#e74c3c', 'ai_micro': '#9b59b6', 'ai_macro': '#e67e22', 'neutral': '#7f8c8d'
 };
 
 @Component({
@@ -65,43 +46,32 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
   showSplash = true;
   gameState: 'menu' | 'playing' | 'gameover' | 'simulation' | 'hosting' | 'joining' | 'settings' = 'menu';
   
-  MAP_WIDTH = 4000;
-  MAP_HEIGHT = 4000;
+  MAP_WIDTH = 4000; MAP_HEIGHT = 4000;
+  mapType: string = 'standard';
 
-  nodes: GameNode[] = [];
-  flows: Flow[] = [];
-  dots: Dot[] = [];
-  
-  flowIdCounter = 0;
-  dotIdCounter = 0;
+  nodes: GameNode[] = []; flows: Flow[] = []; dots: Dot[] = [];
+  flowIdCounter = 0; dotIdCounter = 0;
   
   selectedNode: GameNode | null = null;
-  dragCurrentX = 0; dragCurrentY = 0;
-  isLineDragging = false;
+  dragCurrentX = 0; dragCurrentY = 0; isLineDragging = false;
   sendPercentage: number = 0.5;
 
   gameLoop: any;
   lastTick = 0; lastFrameTime = 0;
   lastMicroTick = 0; lastMacroTick = 0; lastSyncTick = 0;
 
-  // Camera
   scale = 0.5; panX = 0; panY = 0;
   isPanning = false; lastTouchX = 0; lastTouchY = 0;
   initialPinchDistance = 0; initialScale = 1;
 
-  // Engine Performance
-  targetFPS = 60;
-  frameInterval = 1000 / 60;
-  resolutionScale = 1.0;
-  dpr = 1;
+  targetFPS = 60; frameInterval = 1000 / 60;
+  resolutionScale = 1.0; dpr = 1;
 
-  // P2P
   peer: Peer | null = null; conn: any = null;
   myPeerId: string = ''; joinPeerId: string = '';
   isHost = false; isMultiplayer = false;
   myFaction: 'player' | 'enemy' = 'player';
 
-  // CANVAS ENGINE
   @ViewChild('gameCanvas') canvasRef!: ElementRef<HTMLCanvasElement>;
   ctx!: CanvasRenderingContext2D | null;
 
@@ -110,42 +80,27 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
     setTimeout(() => { this.showSplash = false; }, 2000);
   }
 
-  ngAfterViewInit() {
-    this.initCanvas();
-  }
-
-  @HostListener('window:resize')
-  onResize() {
-    this.initCanvas();
-  }
+  ngAfterViewInit() { this.initCanvas(); }
+  @HostListener('window:resize') onResize() { this.initCanvas(); }
 
   initCanvas() {
     if (!this.canvasRef) return;
     const canvas = this.canvasRef.nativeElement;
     this.dpr = (window.devicePixelRatio || 1) * this.resolutionScale;
-    
-    canvas.width = window.innerWidth * this.dpr;
-    canvas.height = window.innerHeight * this.dpr;
-    canvas.style.width = window.innerWidth + 'px';
-    canvas.style.height = window.innerHeight + 'px';
-    
+    canvas.width = window.innerWidth * this.dpr; canvas.height = window.innerHeight * this.dpr;
+    canvas.style.width = window.innerWidth + 'px'; canvas.style.height = window.innerHeight + 'px';
     this.ctx = canvas.getContext('2d', { alpha: false });
-    
-    if (this.nodes.length === 0) {
-       this.panX = (window.innerWidth / 2) - (this.MAP_WIDTH * this.scale / 2);
-       this.panY = (window.innerHeight / 2) - (this.MAP_HEIGHT * this.scale / 2);
-    }
+    if (this.nodes.length === 0) this.centerCamera();
+  }
+
+  centerCamera() {
+    this.panX = (window.innerWidth / 2) - (this.MAP_WIDTH * this.scale / 2);
+    this.panY = (window.innerHeight / 2) - (this.MAP_HEIGHT * this.scale / 2);
   }
 
   autoDetectPerformance() {
-    const w = window.innerWidth;
-    if (w < 800) {
-      this.resolutionScale = 0.75; 
-      this.targetFPS = 60;
-    } else {
-      this.resolutionScale = 1.0;
-      this.targetFPS = 120;
-    }
+    if (window.innerWidth < 800) { this.resolutionScale = 0.75; this.targetFPS = 60; } 
+    else { this.resolutionScale = 1.0; this.targetFPS = 120; }
     this.updateFrameInterval();
   }
 
@@ -156,14 +111,12 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
   closeSettings() { this.gameState = 'menu'; }
   setPercentage(p: number) { this.sendPercentage = p; }
   openBabylon() { window.open('https://babylonias.com/', '_system'); }
-
   ngOnDestroy() { this.stopGame(); if (this.peer) this.peer.destroy(); }
 
   // --- P2P ---
   initHost() {
     this.gameState = 'hosting'; this.isHost = true; this.isMultiplayer = true; this.myFaction = 'player';
-    this.peer = new Peer();
-    this.peer.on('open', (id) => this.myPeerId = id);
+    this.peer = new Peer(); this.peer.on('open', (id) => this.myPeerId = id);
     this.peer.on('connection', (c) => { this.conn = c; this.setupConnection(); this.startGame('player'); });
   }
   initJoin() {
@@ -180,10 +133,7 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
       if (this.isHost) {
         if (data.type === 'action') this.processClientAction(data.action);
       } else {
-        if (data.type === 'state') { 
-           this.nodes = data.state.nodes; 
-           this.flows = data.state.flows; 
-        }
+        if (data.type === 'state') { this.nodes = data.state.nodes; this.flows = data.state.flows; }
         else if (data.type === 'gameover') { this.gameState = 'gameover'; this.stopGame(); }
       }
     });
@@ -198,36 +148,92 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
     } else if (a.cmd === 'upgrade') {
        const node = this.nodes.find(n => n.id === a.nodeId);
        if (node) this.upgradeNodeCore(node);
+    } else if (a.cmd === 'cancel_flow') {
+       const flow = this.flows.find(f => f.id === a.flowId);
+       if (flow) this.cancelFlowCore(flow);
     }
   }
 
   // --- GAME START ---
+  generateMap(mode: 'player' | 'simulation') {
+    const types = ['standard', 'chokepoint', 'scattered', 'hexagon', 'duel', 'crossfire'];
+    this.mapType = types[Math.floor(Math.random() * types.length)];
+    let pOwner: any = mode === 'player' ? 'player' : 'ai_micro';
+    let eOwner: any = mode === 'player' ? 'enemy' : 'ai_macro';
+    this.nodes = [];
+
+    switch(this.mapType) {
+      case 'hexagon':
+        this.nodes = [
+          { id: 1, x: 2000, y: 3500, troops: 5000, owner: pOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 2, x: 2000, y: 500, troops: 5000, owner: eOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 3, x: 2000, y: 2000, troops: 20000, owner: 'neutral', type: 'fortress', level: 3, capacity: 100000, pushX:0, pushY:0 },
+          { id: 4, x: 1000, y: 1200, troops: 3000, owner: 'neutral', type: 'forge', level: 1, capacity: 15000, pushX:0, pushY:0 },
+          { id: 5, x: 3000, y: 1200, troops: 3000, owner: 'neutral', type: 'forge', level: 1, capacity: 15000, pushX:0, pushY:0 },
+          { id: 6, x: 1000, y: 2800, troops: 3000, owner: 'neutral', type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 7, x: 3000, y: 2800, troops: 3000, owner: 'neutral', type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 }
+        ]; break;
+      case 'duel':
+        this.nodes = [
+          { id: 1, x: 500, y: 2000, troops: 15000, owner: pOwner, type: 'fortress', level: 2, capacity: 50000, pushX:0, pushY:0 },
+          { id: 2, x: 3500, y: 2000, troops: 15000, owner: eOwner, type: 'fortress', level: 2, capacity: 50000, pushX:0, pushY:0 },
+          { id: 3, x: 2000, y: 1000, troops: 5000, owner: 'neutral', type: 'forge', level: 1, capacity: 15000, pushX:0, pushY:0 },
+          { id: 4, x: 2000, y: 3000, troops: 5000, owner: 'neutral', type: 'forge', level: 1, capacity: 15000, pushX:0, pushY:0 },
+          { id: 5, x: 2000, y: 2000, troops: 8000, owner: 'neutral', type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 }
+        ]; break;
+      case 'crossfire':
+        this.nodes = [
+          { id: 1, x: 800, y: 800, troops: 6000, owner: pOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 2, x: 3200, y: 3200, troops: 6000, owner: pOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 3, x: 3200, y: 800, troops: 6000, owner: eOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 4, x: 800, y: 3200, troops: 6000, owner: eOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 5, x: 2000, y: 2000, troops: 20000, owner: 'neutral', type: 'fortress', level: 3, capacity: 80000, pushX:0, pushY:0 }
+        ]; break;
+      case 'chokepoint':
+        this.nodes = [
+          { id: 1, x: 500, y: 2000, troops: 5000, owner: pOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 2, x: 3500, y: 2000, troops: 5000, owner: eOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 3, x: 2000, y: 2000, troops: 15000, owner: 'neutral', type: 'fortress', level: 3, capacity: 80000, pushX:0, pushY:0 },
+          { id: 4, x: 1200, y: 1000, troops: 3000, owner: 'neutral', type: 'forge', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 5, x: 1200, y: 3000, troops: 3000, owner: 'neutral', type: 'forge', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 6, x: 2800, y: 1000, troops: 3000, owner: 'neutral', type: 'forge', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 7, x: 2800, y: 3000, troops: 3000, owner: 'neutral', type: 'forge', level: 1, capacity: 20000, pushX:0, pushY:0 }
+        ]; break;
+      case 'scattered':
+        this.nodes = [
+          { id: 1, x: 400, y: 400, troops: 5000, owner: pOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 2, x: 3600, y: 3600, troops: 5000, owner: eOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 3, x: 1000, y: 3000, troops: 3000, owner: 'neutral', type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 4, x: 3000, y: 1000, troops: 3000, owner: 'neutral', type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 5, x: 2000, y: 1500, troops: 5000, owner: 'neutral', type: 'fortress', level: 1, capacity: 30000, pushX:0, pushY:0 },
+          { id: 6, x: 2000, y: 2500, troops: 5000, owner: 'neutral', type: 'fortress', level: 1, capacity: 30000, pushX:0, pushY:0 },
+          { id: 7, x: 1500, y: 2000, troops: 2000, owner: 'neutral', type: 'forge', level: 1, capacity: 15000, pushX:0, pushY:0 },
+          { id: 8, x: 2500, y: 2000, troops: 2000, owner: 'neutral', type: 'forge', level: 1, capacity: 15000, pushX:0, pushY:0 }
+        ]; break;
+      default:
+        this.nodes = [
+          { id: 1, x: 800, y: 3200, troops: 5000, owner: pOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 2, x: 3200, y: 800, troops: 5000, owner: eOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 3, x: 2000, y: 2000, troops: 15000, owner: 'neutral', type: 'fortress', level: 2, capacity: 50000, pushX:0, pushY:0 },
+          { id: 4, x: 800, y: 800, troops: 2000, owner: 'neutral', type: 'forge', level: 1, capacity: 15000, pushX:0, pushY:0 },
+          { id: 5, x: 3200, y: 3200, troops: 2000, owner: 'neutral', type: 'forge', level: 1, capacity: 15000, pushX:0, pushY:0 },
+          { id: 6, x: 2000, y: 800, troops: 3000, owner: 'neutral', type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 7, x: 2000, y: 3200, troops: 3000, owner: 'neutral', type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 }
+        ]; break;
+    }
+  }
+
   startGame(mode: 'player' | 'simulation' = 'player') {
     this.gameState = mode === 'simulation' ? 'simulation' : 'playing';
     this.isMultiplayer = this.conn !== null;
     this.myFaction = this.isHost || !this.isMultiplayer ? 'player' : 'enemy';
 
-    let pOwner: any = mode === 'player' ? 'player' : 'ai_micro';
-    let eOwner: any = mode === 'player' ? 'enemy' : 'ai_macro';
+    this.generateMap(mode);
 
-    this.nodes = [
-      { id: 1, x: 800, y: 3200, troops: 5000, owner: pOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
-      { id: 2, x: 3200, y: 800, troops: 5000, owner: eOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
-      { id: 3, x: 2000, y: 2000, troops: 15000, owner: 'neutral', type: 'fortress', level: 2, capacity: 50000, pushX:0, pushY:0 },
-      { id: 4, x: 800, y: 800, troops: 2000, owner: 'neutral', type: 'forge', level: 1, capacity: 15000, pushX:0, pushY:0 },
-      { id: 5, x: 3200, y: 3200, troops: 2000, owner: 'neutral', type: 'forge', level: 1, capacity: 15000, pushX:0, pushY:0 },
-      { id: 6, x: 2000, y: 800, troops: 3000, owner: 'neutral', type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
-      { id: 7, x: 2000, y: 3200, troops: 3000, owner: 'neutral', type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 }
-    ];
-
-    this.flows = [];
-    this.dots = [];
-    this.lastTick = performance.now();
-    this.lastFrameTime = this.lastTick;
-    this.lastMicroTick = this.lastTick;
-    this.lastMacroTick = this.lastTick;
-    this.lastSyncTick = this.lastTick;
-    
+    this.flows = []; this.dots = [];
+    this.lastTick = performance.now(); this.lastFrameTime = this.lastTick;
+    this.lastMicroTick = this.lastTick; this.lastMacroTick = this.lastTick; this.lastSyncTick = this.lastTick;
+    this.centerCamera();
     this.gameLoop = requestAnimationFrame((t) => this.tick(t));
   }
 
@@ -244,13 +250,9 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
     if (this.gameState !== 'playing' && this.gameState !== 'simulation') return;
 
     const elapsed = time - this.lastFrameTime;
-    if (elapsed < this.frameInterval) {
-      this.gameLoop = requestAnimationFrame((t) => this.tick(t));
-      return;
-    }
+    if (elapsed < this.frameInterval) { this.gameLoop = requestAnimationFrame((t) => this.tick(t)); return; }
     
-    let dt = elapsed / 1000;
-    if (dt > 0.1) dt = 0.1; 
+    let dt = elapsed / 1000; if (dt > 0.1) dt = 0.1; 
     
     this.lastFrameTime = time - (elapsed % this.frameInterval);
     this.lastTick = time;
@@ -262,7 +264,6 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   updateLogic(dt: number, time: number) {
-    // 1. Generate troops (Host only)
     if (!this.isMultiplayer || this.isHost) {
       this.nodes.forEach(n => {
         if (n.owner !== 'neutral') {
@@ -273,28 +274,19 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
           n.troops += genRate * dt; 
           if (n.troops > n.capacity) n.troops -= (n.troops - n.capacity) * 0.1 * dt; 
         }
-
         n.pushX *= 0.85; n.pushY *= 0.85; 
         n.x = Math.max(60, Math.min(this.MAP_WIDTH - 60, n.x + n.pushX * dt));
         n.y = Math.max(60, Math.min(this.MAP_HEIGHT - 60, n.y + n.pushY * dt));
       });
     }
 
-    // 2. Process Flows to Spawn Dots (Both Host and Client do this for smooth visuals)
     for (let i = this.flows.length - 1; i >= 0; i--) {
       const flow = this.flows[i];
       const source = this.nodes.find(n => n.id === flow.sourceId);
-      
-      if (!source || source.owner !== flow.owner) {
-         this.flows.splice(i, 1);
-         continue;
-      }
+      if (!source || source.owner !== flow.owner) { this.flows.splice(i, 1); continue; }
 
       const remaining = flow.totalTroops - flow.troopsSent;
-      if (remaining <= 0) {
-         this.flows.splice(i, 1);
-         continue;
-      }
+      if (remaining <= 0) { this.flows.splice(i, 1); continue; }
 
       let toSend = flow.drainRate * dt;
       if (toSend > remaining) toSend = remaining;
@@ -304,28 +296,19 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
 
       while (flow.fractionalAccumulator >= flow.troopsPerDot) {
          flow.fractionalAccumulator -= flow.troopsPerDot;
-         
          const startX = source ? source.x : flow.targetX;
          const startY = source ? source.y : flow.targetY;
-         const angle = Math.random() * Math.PI * 2;
-         const offset = Math.random() * 25;
+         const angle = Math.random() * Math.PI * 2; const offset = Math.random() * 25;
          
          this.dots.push({
            id: this.dotIdCounter++,
-           x: startX + Math.cos(angle)*offset,
-           y: startY + Math.sin(angle)*offset,
-           targetId: flow.targetId,
-           targetX: flow.targetX,
-           targetY: flow.targetY,
-           owner: flow.owner,
-           troops: flow.troopsPerDot,
-           unitType: flow.unitType,
-           flowId: flow.id
+           x: startX + Math.cos(angle)*offset, y: startY + Math.sin(angle)*offset,
+           targetId: flow.targetId, targetX: flow.targetX, targetY: flow.targetY,
+           owner: flow.owner, troops: flow.troopsPerDot, unitType: flow.unitType, flowId: flow.id
          });
       }
     }
 
-    // 3. Move Dots
     for (let i = this.dots.length - 1; i >= 0; i--) {
       const dot = this.dots[i];
       if (dot.troops <= 0) continue; 
@@ -342,27 +325,19 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
            targetNode = this.createCamp(dot);
            this.dots.forEach(d => { if (d.flowId === dot.flowId) d.targetId = targetNode!.id; });
            this.flows.forEach(f => { if (f.id === dot.flowId) f.targetId = targetNode!.id; });
-         } else if (targetNode) {
-           this.processDotCombat(dot, targetNode);
-         }
-         dot.troops = 0; // Mark for death
+         } else if (targetNode) { this.processDotCombat(dot, targetNode); }
+         dot.troops = 0; 
       } else {
-         dot.x += (dx / dist) * speed;
-         dot.y += (dy / dist) * speed;
+         dot.x += (dx / dist) * speed; dot.y += (dy / dist) * speed;
       }
     }
 
-    // 4. Dot Mid-Air Collisions (Frontlines)
     this.processDotCollisions();
-
-    // Clean dead dots
     this.dots = this.dots.filter(d => d.troops > 0);
 
-    // AI & Networking
     if (!this.isMultiplayer || this.isHost) {
       if (this.gameState === 'playing' && !this.isMultiplayer) this.runBasicEnemyAI();
       else if (this.gameState === 'simulation') this.runSimulationAI(time);
-
       this.checkWinCondition();
 
       if (this.isHost && time - this.lastSyncTick > 50) {
@@ -372,13 +347,12 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
     }
   }
 
-  // --- RENDERING (PURE CANVAS) ---
+  // --- RENDERING OPTIMIZADO (BATCHING) ---
   renderCanvas() {
     if (!this.ctx || !this.canvasRef) return;
     const canvas = this.canvasRef.nativeElement;
     const ctx = this.ctx;
 
-    // Solid dark background, minimalist
     ctx.fillStyle = '#12141a';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -387,93 +361,84 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
     ctx.translate(this.panX, this.panY);
     ctx.scale(this.scale, this.scale);
 
-    // Faint connection lines between active flows
+    // Faint connection lines & FLOW BADGES
     ctx.lineWidth = 1;
     this.flows.forEach(f => {
        const source = this.nodes.find(n => n.id === f.sourceId);
        if (source) {
           ctx.strokeStyle = this.hexToRgba(FACTION_COLORS[f.owner], 0.2);
-          ctx.beginPath();
-          ctx.moveTo(source.x, source.y);
-          ctx.lineTo(f.targetX, f.targetY);
-          ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(source.x, source.y); ctx.lineTo(f.targetX, f.targetY); ctx.stroke();
+          
+          // Badge interaction
+          const midX = source.x + (f.targetX - source.x) * 0.5;
+          const midY = source.y + (f.targetY - source.y) * 0.5;
+          const remaining = f.totalTroops - f.troopsSent;
+          
+          if (remaining > 0) {
+             ctx.fillStyle = '#222';
+             ctx.beginPath(); ctx.roundRect(midX - 30, midY - 12, 60, 24, 12); ctx.fill();
+             ctx.fillStyle = FACTION_COLORS[f.owner];
+             ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+             ctx.fillText('x' + this.formatTroops(remaining), midX, midY);
+          }
        }
     });
 
-    // Draw Dots (Particles)
-    this.dots.forEach(d => {
-       ctx.fillStyle = FACTION_COLORS[d.owner];
+    // Batch Rendering for Dots
+    const dotsByColor: Record<string, Dot[]> = {};
+    for (const owner in FACTION_COLORS) dotsByColor[owner] = [];
+    this.dots.forEach(d => dotsByColor[d.owner].push(d));
+
+    for (const owner in FACTION_COLORS) {
+       const dots = dotsByColor[owner];
+       if (dots.length === 0) continue;
+       
+       ctx.fillStyle = FACTION_COLORS[owner];
        ctx.beginPath();
-       if (d.unitType === 'heavy') {
-          ctx.rect(d.x - 4, d.y - 4, 8, 8);
-       } else {
-          ctx.arc(d.x, d.y, 4, 0, Math.PI*2);
-       }
+       dots.forEach(d => {
+         if (d.unitType === 'heavy') {
+            ctx.rect(d.x - 4, d.y - 4, 8, 8);
+         } else {
+            ctx.moveTo(d.x + 4, d.y);
+            ctx.arc(d.x, d.y, 4, 0, Math.PI*2);
+         }
+       });
        ctx.fill();
-    });
-
-    // Draw Drag Line
-    if (this.isLineDragging && this.selectedNode) {
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([10, 10]);
-      ctx.beginPath();
-      ctx.moveTo(this.selectedNode.x, this.selectedNode.y);
-      ctx.lineTo(this.dragCurrentX, this.dragCurrentY);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.beginPath(); ctx.arc(this.dragCurrentX, this.dragCurrentY, 15, 0, Math.PI*2); ctx.stroke();
     }
 
-    // Draw Nodes
+    // Drag Line
+    if (this.isLineDragging && this.selectedNode) {
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.setLineDash([10, 10]);
+      ctx.beginPath(); ctx.moveTo(this.selectedNode.x, this.selectedNode.y); ctx.lineTo(this.dragCurrentX, this.dragCurrentY); ctx.stroke();
+      ctx.setLineDash([]); ctx.beginPath(); ctx.arc(this.dragCurrentX, this.dragCurrentY, 15, 0, Math.PI*2); ctx.stroke();
+    }
+
+    // Nodes
     this.nodes.forEach(n => {
       const color = FACTION_COLORS[n.owner] || '#555';
       const isSelected = this.selectedNode?.id === n.id;
-      
-      // Physical Push Jitter
       const nx = n.x + ((n.pushX !== 0) ? (Math.random() - 0.5) * 4 : 0);
       const ny = n.y + ((n.pushY !== 0) ? (Math.random() - 0.5) * 4 : 0);
 
-      // Clean flat rendering
       ctx.fillStyle = color;
-      
-      if (isSelected) {
-         ctx.strokeStyle = '#fff';
-         ctx.lineWidth = 3;
-         ctx.beginPath(); ctx.arc(nx, ny, 50, 0, Math.PI*2); ctx.stroke();
-      }
+      if (isSelected) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(nx, ny, 50, 0, Math.PI*2); ctx.stroke(); }
 
-      ctx.save();
-      ctx.translate(nx, ny);
-
+      ctx.save(); ctx.translate(nx, ny);
       ctx.beginPath();
       if (n.type === 'city') ctx.arc(0, 0, 40, 0, Math.PI * 2);
       else if (n.type === 'camp') { ctx.setLineDash([5, 5]); ctx.arc(0, 0, 30, 0, Math.PI * 2); }
       else if (n.type === 'forge') ctx.roundRect(-35, -35, 70, 70, 8);
       else if (n.type === 'fortress') { ctx.rotate(Math.PI / 4); ctx.roundRect(-35, -35, 70, 70, 12); }
-      
-      ctx.fill(); 
-      ctx.restore();
-      ctx.setLineDash([]);
+      ctx.fill(); ctx.restore(); ctx.setLineDash([]);
 
-      // Text Numbers
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 20px Arial, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 20px Arial, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(this.formatTroops(n.troops), nx, ny);
 
-      // Upgrade Status
       if (n.owner === this.myFaction && n.level < 5 && n.type !== 'camp') {
-         ctx.fillStyle = 'rgba(255,255,255,0.7)';
-         ctx.font = '12px Arial, sans-serif';
-         ctx.fillText(`Lvl ${n.level}`, nx, ny + 25);
+         ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = '12px Arial, sans-serif'; ctx.fillText(`Lvl ${n.level}`, nx, ny + 25);
       }
-      
       if (n.troops > n.capacity) {
-         ctx.fillStyle = '#ff1744';
-         ctx.font = 'bold 12px Arial';
-         ctx.fillText('FULL', nx, ny - 50);
+         ctx.fillStyle = '#ff1744'; ctx.font = 'bold 12px Arial'; ctx.fillText('FULL', nx, ny - 50);
       }
     });
 
@@ -486,7 +451,7 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   // --- COMBAT & LOGIC ---
-  createCamp(dot: Dot): GameNode {
+  createCamp(dot: Dot | Flow): GameNode {
     const newNode: GameNode = {
       id: Math.max(...this.nodes.map(n => n.id), 0) + 1,
       x: dot.targetX, y: dot.targetY,
@@ -498,58 +463,67 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   processDotCombat(dot: Dot, target: GameNode) {
-    if (this.isMultiplayer && !this.isHost) return; // Client only visually simulates
+    if (this.isMultiplayer && !this.isHost) return;
 
-    if (target.owner === dot.owner) {
-      target.troops += dot.troops;
-    } else {
+    if (target.owner === dot.owner) { target.troops += dot.troops; } 
+    else {
       let damage = dot.troops * (dot.unitType === 'heavy' ? 2 : 1);
       if (target.type === 'fortress') damage *= 0.5;
 
       const pushForce = dot.unitType === 'heavy' ? 1.5 : 0.5;
       const dx = target.x - dot.x; const dy = target.y - dot.y;
       const dist = Math.hypot(dx, dy);
-      if (dist > 0) {
-         target.pushX += (dx / dist) * pushForce;
-         target.pushY += (dy / dist) * pushForce;
-      }
+      if (dist > 0) { target.pushX += (dx / dist) * pushForce; target.pushY += (dy / dist) * pushForce; }
 
       target.troops -= damage;
-      if (target.troops < 0) {
-        target.owner = dot.owner as any;
-        target.troops = Math.abs(target.troops);
-      }
+      if (target.troops < 0) { target.owner = dot.owner as any; target.troops = Math.abs(target.troops); }
     }
   }
 
   processDotCollisions() {
-    // Spatial mid-air collisions (The true "Frontline")
     for (let i = 0; i < this.dots.length; i++) {
-      const a = this.dots[i];
-      if (a.troops <= 0) continue;
-      
+      const a = this.dots[i]; if (a.troops <= 0) continue;
       for (let j = i + 1; j < this.dots.length; j++) {
-        const b = this.dots[j];
-        if (b.troops <= 0) continue;
+        const b = this.dots[j]; if (b.troops <= 0) continue;
         if (a.owner === b.owner) continue;
 
-        const dx = a.x - b.x;
-        const dy = a.y - b.y;
-        if (dx*dx + dy*dy < 100) { // radius ~5 -> sq 100
+        const dx = a.x - b.x; const dy = a.y - b.y;
+        if (dx*dx + dy*dy < 100) { 
            const dmgA = b.troops * (b.unitType === 'heavy' ? 2 : 1);
            const dmgB = a.troops * (a.unitType === 'heavy' ? 2 : 1);
-           
-           a.troops -= dmgA;
-           b.troops -= dmgB;
+           a.troops -= dmgA; b.troops -= dmgB;
         }
       }
     }
+  }
+
+  upgradeNode(node: GameNode) {
+    if (this.isMultiplayer && !this.isHost) this.conn.send({ type: 'action', action: { cmd: 'upgrade', nodeId: node.id }});
+    else this.upgradeNodeCore(node);
   }
 
   upgradeNodeCore(node: GameNode) {
     if (node.type === 'camp') return;
     const cost = 5000 * node.level; 
     if (node.troops >= cost && node.level < 5) { node.troops -= cost; node.level++; node.capacity += 20000; }
+  }
+
+  cancelFlowCore(flow: Flow) {
+    const idx = this.flows.findIndex(f => f.id === flow.id);
+    if (idx === -1) return;
+    this.flows.splice(idx, 1);
+    
+    const source = this.nodes.find(n => n.id === flow.sourceId);
+    if (!source) return;
+    const midX = source.x + (flow.targetX - source.x) * 0.5;
+    const midY = source.y + (flow.targetY - source.y) * 0.5;
+    const remaining = flow.totalTroops - flow.troopsSent;
+    
+    if (remaining > 0) {
+      const camp = this.createCamp({ targetX: midX, targetY: midY, owner: flow.owner } as any);
+      camp.troops = remaining;
+      this.dots.forEach(d => { if (d.flowId === flow.id) { d.targetId = camp.id; d.targetX = midX; d.targetY = midY; } });
+    }
   }
 
   runBasicEnemyAI() {
@@ -630,9 +604,27 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
       } else {
          this.selectedNode = hitNode; this.isLineDragging = true; this.dragCurrentX = logical.x; this.dragCurrentY = logical.y;
       }
-    } else {
-      this.isPanning = true; this.lastTouchX = clientX; this.lastTouchY = clientY;
+      return;
+    } 
+
+    // Check hit on Flow Badges (Cancellation)
+    let hitFlow: Flow | null = null;
+    for (const f of this.flows) {
+      if (f.owner !== this.myFaction) continue;
+      const source = this.nodes.find(n => n.id === f.sourceId);
+      if (!source) continue;
+      const midX = source.x + (f.targetX - source.x) * 0.5;
+      const midY = source.y + (f.targetY - source.y) * 0.5;
+      if (Math.hypot(midX - logical.x, midY - logical.y) < 35) { hitFlow = f; break; }
     }
+
+    if (hitFlow) {
+      if (this.isMultiplayer && !this.isHost) this.conn.send({ type: 'action', action: { cmd: 'cancel_flow', flowId: hitFlow.id }});
+      else this.cancelFlowCore(hitFlow);
+      return;
+    }
+
+    this.isPanning = true; this.lastTouchX = clientX; this.lastTouchY = clientY;
   }
 
   onTouchMove(e: TouchEvent | MouseEvent) {
@@ -694,11 +686,6 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
       owner: source.owner, unitType: source.type === 'forge' ? 'heavy' : 'light',
       fractionalAccumulator: 0, troopsPerDot, drainRate
     });
-  }
-
-  upgradeNode(node: GameNode) {
-    if (this.isMultiplayer && !this.isHost) this.conn.send({ type: 'action', action: { cmd: 'upgrade', nodeId: node.id }});
-    else this.upgradeNodeCore(node);
   }
 
   copyPeerId() { navigator.clipboard.writeText(this.myPeerId); }
