@@ -17,24 +17,37 @@ export interface GameNode {
   pushX: number; pushY: number;
 }
 
-export interface TroopMovement {
+export interface Flow {
   id: number;
-  startX: number; startY: number;
+  sourceId: number;
+  targetId: number | null;
   targetX: number; targetY: number;
-  amount: number;
+  totalTroops: number;
+  troopsSent: number;
   owner: 'player' | 'enemy' | 'neutral' | 'ai_macro' | 'ai_micro';
   unitType: UnitType;
-  progress: number; totalDistance: number;
-  targetNodeId: number | null;
-  combating: boolean;
+  fractionalAccumulator: number;
+  troopsPerDot: number;
+  drainRate: number;
+}
+
+export interface Dot {
+  id: number;
+  x: number; y: number;
+  targetId: number | null;
+  targetX: number; targetY: number;
+  owner: string;
+  troops: number;
+  unitType: UnitType;
+  flowId: number;
 }
 
 const FACTION_COLORS: Record<string, string> = {
-  'player': '#00e5ff',
-  'enemy': '#ff1744',
-  'ai_micro': '#d500f9',
-  'ai_macro': '#ff9100',
-  'neutral': '#78909c'
+  'player': '#3498db',    // Clean flat blue
+  'enemy': '#e74c3c',     // Clean flat red
+  'ai_micro': '#9b59b6',  // Purple
+  'ai_macro': '#e67e22',  // Orange
+  'neutral': '#7f8c8d'    // Grey
 };
 
 @Component({
@@ -44,8 +57,8 @@ const FACTION_COLORS: Record<string, string> = {
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.css'],
   animations: [
-    trigger('splashFade', [transition(':leave', [animate('1s ease-in', style({ opacity: 0, transform: 'scale(1.1)' }))])]),
-    trigger('uiSlideUp', [transition(':enter', [style({ opacity: 0, transform: 'translateY(20px)' }), animate('0.3s ease-out', style({ opacity: 1, transform: 'translateY(0)' }))])])
+    trigger('splashFade', [transition(':leave', [animate('0.5s ease-in', style({ opacity: 0 }))])]),
+    trigger('uiSlideUp', [transition(':enter', [style({ opacity: 0, transform: 'translateY(10px)' }), animate('0.2s ease-out', style({ opacity: 1, transform: 'translateY(0)' }))])])
   ]
 })
 export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
@@ -56,8 +69,11 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
   MAP_HEIGHT = 4000;
 
   nodes: GameNode[] = [];
-  movements: TroopMovement[] = [];
-  movementIdCounter = 0;
+  flows: Flow[] = [];
+  dots: Dot[] = [];
+  
+  flowIdCounter = 0;
+  dotIdCounter = 0;
   
   selectedNode: GameNode | null = null;
   dragCurrentX = 0; dragCurrentY = 0;
@@ -91,7 +107,7 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
 
   ngOnInit() {
     this.autoDetectPerformance();
-    setTimeout(() => { this.showSplash = false; }, 3000);
+    setTimeout(() => { this.showSplash = false; }, 2000);
   }
 
   ngAfterViewInit() {
@@ -108,16 +124,13 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
     const canvas = this.canvasRef.nativeElement;
     this.dpr = (window.devicePixelRatio || 1) * this.resolutionScale;
     
-    // Physical pixels
     canvas.width = window.innerWidth * this.dpr;
     canvas.height = window.innerHeight * this.dpr;
-    // CSS pixels
     canvas.style.width = window.innerWidth + 'px';
     canvas.style.height = window.innerHeight + 'px';
     
     this.ctx = canvas.getContext('2d', { alpha: false });
     
-    // Initial Camera
     if (this.nodes.length === 0) {
        this.panX = (window.innerWidth / 2) - (this.MAP_WIDTH * this.scale / 2);
        this.panY = (window.innerHeight / 2) - (this.MAP_HEIGHT * this.scale / 2);
@@ -131,7 +144,7 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
       this.targetFPS = 60;
     } else {
       this.resolutionScale = 1.0;
-      this.targetFPS = 120; // Allow 120 on desktop/iPad
+      this.targetFPS = 120;
     }
     this.updateFrameInterval();
   }
@@ -167,7 +180,10 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
       if (this.isHost) {
         if (data.type === 'action') this.processClientAction(data.action);
       } else {
-        if (data.type === 'state') { this.nodes = data.state.nodes; this.movements = data.state.movements; }
+        if (data.type === 'state') { 
+           this.nodes = data.state.nodes; 
+           this.flows = data.state.flows; 
+        }
         else if (data.type === 'gameover') { this.gameState = 'gameover'; this.stopGame(); }
       }
     });
@@ -204,7 +220,8 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
       { id: 7, x: 2000, y: 3200, troops: 3000, owner: 'neutral', type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 }
     ];
 
-    this.movements = [];
+    this.flows = [];
+    this.dots = [];
     this.lastTick = performance.now();
     this.lastFrameTime = this.lastTick;
     this.lastMicroTick = this.lastTick;
@@ -245,8 +262,8 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   updateLogic(dt: number, time: number) {
+    // 1. Generate troops (Host only)
     if (!this.isMultiplayer || this.isHost) {
-      // Logic
       this.nodes.forEach(n => {
         if (n.owner !== 'neutral') {
           let genRate = 200 * n.level; 
@@ -261,24 +278,88 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
         n.x = Math.max(60, Math.min(this.MAP_WIDTH - 60, n.x + n.pushX * dt));
         n.y = Math.max(60, Math.min(this.MAP_HEIGHT - 60, n.y + n.pushY * dt));
       });
+    }
 
-      for (let i = this.movements.length - 1; i >= 0; i--) {
-        const m = this.movements[i];
-        if (!m.combating) {
-          const speed = m.unitType === 'heavy' ? 150 : 350;
-          m.progress += speed * dt;
-          if (m.progress >= m.totalDistance - 50) {
-            m.combating = true;
-            if (m.targetNodeId === null) {
-              this.createCamp(m);
-              this.movements.splice(i, 1);
-              continue;
-            }
-          }
-        }
-        if (m.combating) this.processCombatTick(m, dt, i);
+    // 2. Process Flows to Spawn Dots (Both Host and Client do this for smooth visuals)
+    for (let i = this.flows.length - 1; i >= 0; i--) {
+      const flow = this.flows[i];
+      const source = this.nodes.find(n => n.id === flow.sourceId);
+      
+      if (!source || source.owner !== flow.owner) {
+         this.flows.splice(i, 1);
+         continue;
       }
 
+      const remaining = flow.totalTroops - flow.troopsSent;
+      if (remaining <= 0) {
+         this.flows.splice(i, 1);
+         continue;
+      }
+
+      let toSend = flow.drainRate * dt;
+      if (toSend > remaining) toSend = remaining;
+
+      flow.troopsSent += toSend;
+      flow.fractionalAccumulator += toSend;
+
+      while (flow.fractionalAccumulator >= flow.troopsPerDot) {
+         flow.fractionalAccumulator -= flow.troopsPerDot;
+         
+         const startX = source ? source.x : flow.targetX;
+         const startY = source ? source.y : flow.targetY;
+         const angle = Math.random() * Math.PI * 2;
+         const offset = Math.random() * 25;
+         
+         this.dots.push({
+           id: this.dotIdCounter++,
+           x: startX + Math.cos(angle)*offset,
+           y: startY + Math.sin(angle)*offset,
+           targetId: flow.targetId,
+           targetX: flow.targetX,
+           targetY: flow.targetY,
+           owner: flow.owner,
+           troops: flow.troopsPerDot,
+           unitType: flow.unitType,
+           flowId: flow.id
+         });
+      }
+    }
+
+    // 3. Move Dots
+    for (let i = this.dots.length - 1; i >= 0; i--) {
+      const dot = this.dots[i];
+      if (dot.troops <= 0) continue; 
+      
+      let targetNode = dot.targetId ? this.nodes.find(n => n.id === dot.targetId) : null;
+      if (targetNode) { dot.targetX = targetNode.x; dot.targetY = targetNode.y; }
+
+      const dx = dot.targetX - dot.x; const dy = dot.targetY - dot.y;
+      const dist = Math.hypot(dx, dy);
+      const speed = (dot.unitType === 'heavy' ? 150 : 350) * dt;
+
+      if (dist <= speed || dist < 20) {
+         if (dot.targetId === null) {
+           targetNode = this.createCamp(dot);
+           this.dots.forEach(d => { if (d.flowId === dot.flowId) d.targetId = targetNode!.id; });
+           this.flows.forEach(f => { if (f.id === dot.flowId) f.targetId = targetNode!.id; });
+         } else if (targetNode) {
+           this.processDotCombat(dot, targetNode);
+         }
+         dot.troops = 0; // Mark for death
+      } else {
+         dot.x += (dx / dist) * speed;
+         dot.y += (dy / dist) * speed;
+      }
+    }
+
+    // 4. Dot Mid-Air Collisions (Frontlines)
+    this.processDotCollisions();
+
+    // Clean dead dots
+    this.dots = this.dots.filter(d => d.troops > 0);
+
+    // AI & Networking
+    if (!this.isMultiplayer || this.isHost) {
       if (this.gameState === 'playing' && !this.isMultiplayer) this.runBasicEnemyAI();
       else if (this.gameState === 'simulation') this.runSimulationAI(time);
 
@@ -286,7 +367,7 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
 
       if (this.isHost && time - this.lastSyncTick > 50) {
         this.lastSyncTick = time;
-        if (this.conn && this.conn.open) this.conn.send({ type: 'state', state: { nodes: this.nodes, movements: this.movements } });
+        if (this.conn && this.conn.open) this.conn.send({ type: 'state', state: { nodes: this.nodes, flows: this.flows } });
       }
     }
   }
@@ -297,8 +378,8 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
     const canvas = this.canvasRef.nativeElement;
     const ctx = this.ctx;
 
-    // Clear Background
-    ctx.fillStyle = '#0b1120';
+    // Solid dark background, minimalist
+    ctx.fillStyle = '#12141a';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     ctx.save();
@@ -306,127 +387,94 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
     ctx.translate(this.panX, this.panY);
     ctx.scale(this.scale, this.scale);
 
-    // 1. Grid
-    ctx.strokeStyle = 'rgba(0, 229, 255, 0.05)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    for (let x = 0; x <= this.MAP_WIDTH; x += 200) { ctx.moveTo(x, 0); ctx.lineTo(x, this.MAP_HEIGHT); }
-    for (let y = 0; y <= this.MAP_HEIGHT; y += 200) { ctx.moveTo(0, y); ctx.lineTo(this.MAP_WIDTH, y); }
-    ctx.stroke();
-
-    // Map Bounds
-    ctx.strokeStyle = 'rgba(0, 229, 255, 0.3)';
-    ctx.lineWidth = 10;
-    ctx.strokeRect(0, 0, this.MAP_WIDTH, this.MAP_HEIGHT);
-
-    // 2. Territory (Frontlines - Fast Radial Gradients)
-    ctx.globalCompositeOperation = 'lighter';
-    this.nodes.forEach(n => {
-      if (n.owner === 'neutral') return;
-      const radius = 250 + (n.troops / n.capacity) * 300;
-      const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, radius);
-      grad.addColorStop(0, this.hexToRgba(FACTION_COLORS[n.owner], 0.2));
-      grad.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = grad;
-      ctx.beginPath(); ctx.arc(n.x, n.y, radius, 0, Math.PI * 2); ctx.fill();
+    // Faint connection lines between active flows
+    ctx.lineWidth = 1;
+    this.flows.forEach(f => {
+       const source = this.nodes.find(n => n.id === f.sourceId);
+       if (source) {
+          ctx.strokeStyle = this.hexToRgba(FACTION_COLORS[f.owner], 0.2);
+          ctx.beginPath();
+          ctx.moveTo(source.x, source.y);
+          ctx.lineTo(f.targetX, f.targetY);
+          ctx.stroke();
+       }
     });
-    ctx.globalCompositeOperation = 'source-over';
 
-    // 3. Drag Line
+    // Draw Dots (Particles)
+    this.dots.forEach(d => {
+       ctx.fillStyle = FACTION_COLORS[d.owner];
+       ctx.beginPath();
+       if (d.unitType === 'heavy') {
+          ctx.rect(d.x - 4, d.y - 4, 8, 8);
+       } else {
+          ctx.arc(d.x, d.y, 4, 0, Math.PI*2);
+       }
+       ctx.fill();
+    });
+
+    // Draw Drag Line
     if (this.isLineDragging && this.selectedNode) {
-      ctx.strokeStyle = '#00e5ff';
-      ctx.lineWidth = 8;
-      ctx.setLineDash([20, 20]);
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([10, 10]);
       ctx.beginPath();
       ctx.moveTo(this.selectedNode.x, this.selectedNode.y);
       ctx.lineTo(this.dragCurrentX, this.dragCurrentY);
       ctx.stroke();
       ctx.setLineDash([]);
-      
-      // Reticle
-      ctx.beginPath(); ctx.arc(this.dragCurrentX, this.dragCurrentY, 30, 0, Math.PI*2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(this.dragCurrentX, this.dragCurrentY, 15, 0, Math.PI*2); ctx.stroke();
     }
 
-    // 4. Swarms
-    this.movements.forEach(m => {
-      const cx = m.startX + ((m.targetX - m.startX) * (m.progress / m.totalDistance));
-      const cy = m.startY + ((m.targetY - m.startY) * (m.progress / m.totalDistance));
-      const color = FACTION_COLORS[m.owner];
-
-      ctx.fillStyle = this.hexToRgba(color, 0.8);
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 3;
-      
-      // Jitter if combat
-      const jx = m.combating ? (Math.random() - 0.5) * 10 : 0;
-      const jy = m.combating ? (Math.random() - 0.5) * 10 : 0;
-
-      ctx.beginPath();
-      if (m.unitType === 'heavy') {
-         ctx.roundRect(cx - 35 + jx, cy - 35 + jy, 70, 70, 10);
-      } else {
-         ctx.arc(cx + jx, cy + jy, 30, 0, Math.PI * 2);
-      }
-      ctx.fill(); ctx.stroke();
-
-      // Text
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 24px Orbitron';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.shadowColor = '#000'; ctx.shadowBlur = 4;
-      ctx.fillText(this.formatTroops(m.amount), cx + jx, cy + jy);
-      ctx.shadowBlur = 0;
-    });
-
-    // 5. Nodes
+    // Draw Nodes
     this.nodes.forEach(n => {
-      const color = FACTION_COLORS[n.owner];
+      const color = FACTION_COLORS[n.owner] || '#555';
       const isSelected = this.selectedNode?.id === n.id;
       
-      // Jitter
-      const jx = (n.pushX !== 0) ? (Math.random() - 0.5) * 5 : 0;
-      const jy = (n.pushY !== 0) ? (Math.random() - 0.5) * 5 : 0;
-      const nx = n.x + jx;
-      const ny = n.y + jy;
+      // Physical Push Jitter
+      const nx = n.x + ((n.pushX !== 0) ? (Math.random() - 0.5) * 4 : 0);
+      const ny = n.y + ((n.pushY !== 0) ? (Math.random() - 0.5) * 4 : 0);
 
-      // Glow
-      ctx.shadowColor = color;
-      ctx.shadowBlur = isSelected ? 50 : 20;
-
-      ctx.fillStyle = '#111';
-      ctx.strokeStyle = isSelected ? '#fff' : color;
-      ctx.lineWidth = isSelected ? 8 : 4;
+      // Clean flat rendering
+      ctx.fillStyle = color;
+      
+      if (isSelected) {
+         ctx.strokeStyle = '#fff';
+         ctx.lineWidth = 3;
+         ctx.beginPath(); ctx.arc(nx, ny, 50, 0, Math.PI*2); ctx.stroke();
+      }
 
       ctx.save();
       ctx.translate(nx, ny);
 
       ctx.beginPath();
-      if (n.type === 'city') ctx.arc(0, 0, 60, 0, Math.PI * 2);
-      else if (n.type === 'camp') { ctx.setLineDash([10, 10]); ctx.arc(0, 0, 50, 0, Math.PI * 2); }
-      else if (n.type === 'forge') ctx.roundRect(-55, -55, 110, 110, 15);
-      else if (n.type === 'fortress') { ctx.rotate(Math.PI / 4); ctx.roundRect(-60, -60, 120, 120, 20); }
+      if (n.type === 'city') ctx.arc(0, 0, 40, 0, Math.PI * 2);
+      else if (n.type === 'camp') { ctx.setLineDash([5, 5]); ctx.arc(0, 0, 30, 0, Math.PI * 2); }
+      else if (n.type === 'forge') ctx.roundRect(-35, -35, 70, 70, 8);
+      else if (n.type === 'fortress') { ctx.rotate(Math.PI / 4); ctx.roundRect(-35, -35, 70, 70, 12); }
       
-      ctx.fill(); ctx.stroke();
+      ctx.fill(); 
       ctx.restore();
       ctx.setLineDash([]);
-      ctx.shadowBlur = 0; // Reset
 
-      // Text
+      // Text Numbers
       ctx.fillStyle = '#fff';
-      ctx.font = 'bold 36px Orbitron';
+      ctx.font = 'bold 20px Arial, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.shadowColor = '#000'; ctx.shadowBlur = 5;
       ctx.fillText(this.formatTroops(n.troops), nx, ny);
 
-      // Warning
+      // Upgrade Status
+      if (n.owner === this.myFaction && n.level < 5 && n.type !== 'camp') {
+         ctx.fillStyle = 'rgba(255,255,255,0.7)';
+         ctx.font = '12px Arial, sans-serif';
+         ctx.fillText(`Lvl ${n.level}`, nx, ny + 25);
+      }
+      
       if (n.troops > n.capacity) {
          ctx.fillStyle = '#ff1744';
-         ctx.font = 'bold 24px Orbitron';
-         ctx.fillText('CRÍTICO', nx, ny - 80);
+         ctx.font = 'bold 12px Arial';
+         ctx.fillText('FULL', nx, ny - 50);
       }
-      ctx.shadowBlur = 0;
     });
 
     ctx.restore();
@@ -438,45 +486,63 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   // --- COMBAT & LOGIC ---
-  createCamp(movement: TroopMovement) {
-    this.nodes.push({
+  createCamp(dot: Dot): GameNode {
+    const newNode: GameNode = {
       id: Math.max(...this.nodes.map(n => n.id), 0) + 1,
-      x: movement.targetX, y: movement.targetY,
-      troops: movement.amount, owner: movement.owner,
+      x: dot.targetX, y: dot.targetY,
+      troops: 0, owner: dot.owner as any,
       type: 'camp', level: 1, capacity: 10000, pushX: 0, pushY: 0
-    });
+    };
+    this.nodes.push(newNode);
+    return newNode;
   }
 
-  processCombatTick(movement: TroopMovement, dt: number, index: number) {
-    const target = this.nodes.find(n => n.id === movement.targetNodeId);
-    if (!target) { this.createCamp(movement); this.movements.splice(index, 1); return; }
+  processDotCombat(dot: Dot, target: GameNode) {
+    if (this.isMultiplayer && !this.isHost) return; // Client only visually simulates
 
-    const dx = target.x - movement.startX, dy = target.y - movement.startY;
-    const len = Math.hypot(dx, dy);
-    const dirX = len > 0 ? dx / len : 0, dirY = len > 0 ? dy / len : 0;
-
-    if (target.owner === movement.owner) {
-      const transferRate = 8000 * dt; 
-      const amountToTransfer = Math.min(movement.amount, transferRate);
-      target.troops += amountToTransfer; movement.amount -= amountToTransfer;
-      if (movement.amount <= 0) this.movements.splice(index, 1);
+    if (target.owner === dot.owner) {
+      target.troops += dot.troops;
     } else {
-      let combatRate = 1200 * dt; 
-      let damageToTarget = combatRate; let damageToSwarm = combatRate;
+      let damage = dot.troops * (dot.unitType === 'heavy' ? 2 : 1);
+      if (target.type === 'fortress') damage *= 0.5;
 
-      if (movement.unitType === 'heavy') damageToTarget *= 2.0;
-      if (target.type === 'fortress') damageToTarget *= 0.5;
+      const pushForce = dot.unitType === 'heavy' ? 1.5 : 0.5;
+      const dx = target.x - dot.x; const dy = target.y - dot.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > 0) {
+         target.pushX += (dx / dist) * pushForce;
+         target.pushY += (dy / dist) * pushForce;
+      }
 
-      const pushForce = movement.unitType === 'heavy' ? 300 : 150;
-      target.pushX += dirX * pushForce * dt; target.pushY += dirY * pushForce * dt;
+      target.troops -= damage;
+      if (target.troops < 0) {
+        target.owner = dot.owner as any;
+        target.troops = Math.abs(target.troops);
+      }
+    }
+  }
 
-      const actualDamageTarget = Math.min(target.troops, damageToTarget);
-      const actualDamageSwarm = Math.min(movement.amount, damageToSwarm);
+  processDotCollisions() {
+    // Spatial mid-air collisions (The true "Frontline")
+    for (let i = 0; i < this.dots.length; i++) {
+      const a = this.dots[i];
+      if (a.troops <= 0) continue;
+      
+      for (let j = i + 1; j < this.dots.length; j++) {
+        const b = this.dots[j];
+        if (b.troops <= 0) continue;
+        if (a.owner === b.owner) continue;
 
-      target.troops -= actualDamageTarget; movement.amount -= actualDamageSwarm;
-
-      if (target.troops <= 0) { target.owner = movement.owner; target.troops = movement.amount; this.movements.splice(index, 1); } 
-      else if (movement.amount <= 0) { this.movements.splice(index, 1); }
+        const dx = a.x - b.x;
+        const dy = a.y - b.y;
+        if (dx*dx + dy*dy < 100) { // radius ~5 -> sq 100
+           const dmgA = b.troops * (b.unitType === 'heavy' ? 2 : 1);
+           const dmgB = a.troops * (a.unitType === 'heavy' ? 2 : 1);
+           
+           a.troops -= dmgA;
+           b.troops -= dmgB;
+        }
+      }
     }
   }
 
@@ -542,7 +608,7 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
     }
   }
 
-  // --- INPUT (CANVAS) ---
+  // --- INPUT ---
   getLogicalCoord(clientX: number, clientY: number) { return { x: (clientX - this.panX) / this.scale, y: (clientY - this.panY) / this.scale }; }
 
   onTouchStart(e: TouchEvent | MouseEvent) {
@@ -559,7 +625,6 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
     const hitNode = this.getNodeAtPosition(logical.x, logical.y);
 
     if (hitNode && hitNode.owner === this.myFaction) {
-      // Check if upgrade tapped (bottom 40px of node)
       if (logical.y > hitNode.y + 20 && hitNode.type !== 'camp' && hitNode.level < 5) {
          this.upgradeNode(hitNode);
       } else {
@@ -610,15 +675,25 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   getNodeAtPosition(lx: number, ly: number): GameNode | null {
-    for (const n of this.nodes) if (Math.hypot(n.x - lx, n.y - ly) < 60) return n; return null;
+    for (const n of this.nodes) if (Math.hypot(n.x - lx, n.y - ly) < 45) return n; return null;
   }
 
-  sendTroops(source: GameNode, target: GameNode, percentage: number) { this.createMovement(source, target.x, target.y, percentage, target.id); }
-  sendTroopsToPoint(source: GameNode, targetX: number, targetY: number, percentage: number) { this.createMovement(source, targetX, targetY, percentage, null); }
-  createMovement(source: GameNode, targetX: number, targetY: number, percentage: number, targetId: number | null) {
+  sendTroops(source: GameNode, target: GameNode, percentage: number) { this.createFlow(source, target.x, target.y, percentage, target.id); }
+  sendTroopsToPoint(source: GameNode, targetX: number, targetY: number, percentage: number) { this.createFlow(source, targetX, targetY, percentage, null); }
+  
+  createFlow(source: GameNode, targetX: number, targetY: number, percentage: number, targetId: number | null) {
     const amount = Math.floor(source.troops * percentage); if (amount <= 0) return;
     source.troops -= amount;
-    this.movements.push({ id: this.movementIdCounter++, startX: source.x, startY: source.y, targetX, targetY, amount, owner: source.owner, unitType: source.type === 'forge' ? 'heavy' : 'light', progress: 0, totalDistance: Math.hypot(targetX - source.x, targetY - source.y), targetNodeId: targetId, combating: false });
+    const drainRate = amount / 1.5; 
+    const troopsPerDot = Math.max(1, amount / 30); 
+    
+    this.flows.push({
+      id: this.flowIdCounter++,
+      sourceId: source.id, targetId,
+      targetX, targetY, totalTroops: amount, troopsSent: 0,
+      owner: source.owner, unitType: source.type === 'forge' ? 'heavy' : 'light',
+      fractionalAccumulator: 0, troopsPerDot, drainRate
+    });
   }
 
   upgradeNode(node: GameNode) {
