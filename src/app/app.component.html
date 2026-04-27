@@ -1,27 +1,28 @@
-<div class="game-container" 
-     (mousemove)="onTouchMove($event)" 
-     (mouseup)="onTouchEnd($event)" 
-     (touchmove)="onTouchMove($event)" 
-     (touchend)="onTouchEnd($event)"
-     (wheel)="onWheel($event)"
-     (mousedown)="onTouchStart($event)"
-     (touchstart)="onTouchStart($event)">
+<div class="app-root">
 
-  <!-- OBSCURE OVERLAY FOR MENUS -->
-  <div *ngIf="gameState !== 'playing' && gameState !== 'simulation'" class="overlay-blur"></div>
+  <!-- THE HIGH-PERFORMANCE CANVAS ENGINE -->
+  <canvas #gameCanvas 
+          class="game-canvas"
+          (mousedown)="onTouchStart($event)"
+          (mousemove)="onTouchMove($event)"
+          (mouseup)="onTouchEnd($event)"
+          (touchstart)="onTouchStart($event)"
+          (touchmove)="onTouchMove($event)"
+          (touchend)="onTouchEnd($event)"
+          (wheel)="onWheel($event)"
+          oncontextmenu="return false;"></canvas>
 
-  <!-- SPLASH SCREEN -->
-  <div *ngIf="showSplash" class="splash-screen" @splashFade>
+  <!-- OVERLAYS -->
+  <div *ngIf="showSplash" class="overlay splash-screen" @splashFade>
     <div class="splash-content">
       <h1 class="game-title neon-text epic-pulse">DOTS STRATEGY</h1>
       <div class="divider"></div>
-      <p class="developed-by">Desarrollado por</p>
+      <p class="developed-by">Motor Gráfico Nativo (WebGL/Canvas)</p>
       <a class="babylon-link" (click)="openBabylon()">BABYLON.IA</a>
     </div>
   </div>
 
-  <!-- MAIN MENU -->
-  <div *ngIf="!showSplash && gameState === 'menu'" class="menu-screen" @uiSlideUp>
+  <div *ngIf="gameState === 'menu'" class="overlay menu-screen" @uiSlideUp>
     <h1 class="game-title neon-text">DOTS</h1>
     
     <div class="menu-grid">
@@ -38,45 +39,43 @@
         <span class="icon">🤖</span> Simulador de IAs
       </button>
       <button class="btn-secondary" (click)="openSettings()">
-        <span class="icon">⚙️</span> Ajustes
+        <span class="icon">⚙️</span> Rendimiento
       </button>
     </div>
     
     <button class="btn-secondary mt-auto" (click)="openBabylon()">Créditos a BABYLON.IA</button>
   </div>
 
-  <!-- SETTINGS MENU -->
-  <div *ngIf="!showSplash && gameState === 'settings'" class="menu-screen" @uiSlideUp>
-    <h2 class="neon-text">AJUSTES DEL SISTEMA</h2>
+  <div *ngIf="gameState === 'settings'" class="overlay menu-screen" @uiSlideUp>
+    <h2 class="neon-text">RENDIMIENTO NATIVO</h2>
     
     <div class="settings-panel glass-panel">
       <div class="setting-row">
-        <span>Rendimiento (FPS):</span>
+        <span>Límite de Fotogramas (FPS):</span>
         <button [class.active]="targetFPS === 30" (click)="setFPS(30)">30 FPS</button>
         <button [class.active]="targetFPS === 60" (click)="setFPS(60)">60 FPS</button>
+        <button [class.active]="targetFPS === 120" (click)="setFPS(120)">120 FPS</button>
       </div>
 
       <div class="setting-row">
-        <span>Calidad Visual:</span>
-        <button [class.active]="visualQuality === 'low'" (click)="setQuality('low')">Baja (Rápido)</button>
-        <button [class.active]="visualQuality === 'high'" (click)="setQuality('high')">Alta (Líneas de frente)</button>
+        <span>Resolución (Pixel Ratio):</span>
+        <button [class.active]="resolutionScale === 0.5" (click)="setResolution(0.5)">50%</button>
+        <button [class.active]="resolutionScale === 0.75" (click)="setResolution(0.75)">75%</button>
+        <button [class.active]="resolutionScale === 1.0" (click)="setResolution(1.0)">100%</button>
       </div>
-
-      <div class="setting-row">
-        <span>Escala de Resolución:</span>
-        <button [class.active]="resolutionScale === 0.5" (click)="resolutionScale = 0.5">50%</button>
-        <button [class.active]="resolutionScale === 0.75" (click)="resolutionScale = 0.75">75%</button>
-        <button [class.active]="resolutionScale === 1.0" (click)="resolutionScale = 1.0">100%</button>
-      </div>
+      
+      <p style="color: #aaa; text-align: center; font-size: 0.9rem;">
+        Nota: Al usar el nuevo motor Canvas2D, el juego es increíblemente rápido. Si notas calentamiento en el móvil, baja a 60 FPS o 50% de resolución.
+      </p>
     </div>
     
     <button class="btn-primary" (click)="closeSettings()" style="margin-top: 30px;">Guardar y Volver</button>
   </div>
 
   <!-- P2P HOSTING -->
-  <div *ngIf="!showSplash && gameState === 'hosting'" class="menu-screen" @uiSlideUp>
+  <div *ngIf="gameState === 'hosting'" class="overlay menu-screen" @uiSlideUp>
     <h2 class="neon-text">Esperando Oponente...</h2>
-    <p class="sub-text">Comparte este código de enlace (Port ID) para que tu rival se conecte:</p>
+    <p class="sub-text">Comparte este código de enlace (Port ID):</p>
     
     <div class="token-box">
       <span class="token-text">{{ myPeerId || 'Generando código...' }}</span>
@@ -88,111 +87,27 @@
   </div>
 
   <!-- P2P JOINING -->
-  <div *ngIf="!showSplash && gameState === 'joining'" class="menu-screen" @uiSlideUp>
+  <div *ngIf="gameState === 'joining'" class="overlay menu-screen" @uiSlideUp>
     <h2 class="neon-text">Conectar a Partida</h2>
-    <p class="sub-text">Ingresa el código del anfitrión para batallar:</p>
-    
     <input type="text" class="hacker-input" [(ngModel)]="joinPeerId" placeholder="Ej: abc123def456">
-    
     <button class="btn-primary btn-p2p" (click)="connectToHost()">INICIAR ENLACE</button>
-    <button class="btn-secondary" (click)="goMenu()">Volver</button>
+    <button class="btn-secondary" (click)="goMenu()" style="margin-top: 15px;">Volver</button>
   </div>
 
   <!-- GAME OVER -->
-  <div *ngIf="!showSplash && gameState === 'gameover'" class="menu-screen" @uiSlideUp>
+  <div *ngIf="gameState === 'gameover'" class="overlay menu-screen" @uiSlideUp>
     <h1 class="game-title neon-text">{{ getWinner() }}</h1>
     <div class="divider"></div>
     <button class="btn-primary" (click)="goMenu()">Menú Principal</button>
   </div>
 
   <!-- TACTICAL HUD -->
-  <div *ngIf="!showSplash && (gameState === 'playing' || gameState === 'simulation')" class="tactical-hud" @uiSlideUp>
-    <div class="hud-panel glass-panel">
-      <span>COMANDOS DE FLOTA: </span>
+  <div *ngIf="gameState === 'playing' || gameState === 'simulation'" class="tactical-hud" @uiSlideUp>
+    <div class="glass-panel">
+      <span>TROPAS: </span>
       <button [class.active]="sendPercentage === 0.25" (click)="setPercentage(0.25)">25%</button>
       <button [class.active]="sendPercentage === 0.5" (click)="setPercentage(0.5)">50%</button>
-      <button [class.active]="sendPercentage === 1.0" (click)="setPercentage(1.0)">ALL-IN</button>
-    </div>
-  </div>
-
-  <!-- PLAYING FIELD CAMERA (PAN & ZOOM) -->
-  <div *ngIf="!showSplash && (gameState === 'playing' || gameState === 'simulation')" 
-       class="playing-field"
-       [style.transform]="'translate(' + panX + 'px, ' + panY + 'px) scale(' + scale + ')'"
-       [style.width.px]="MAP_WIDTH"
-       [style.height.px]="MAP_HEIGHT">
-    
-    <!-- Epic Background Grid for camera context -->
-    <div class="tactical-grid"></div>
-
-    <!-- TERRITORY INFLUENCE CANVAS (FRONTLINES) -->
-    <canvas #territoryCanvas class="territory-layer" [attr.width]="MAP_WIDTH" [attr.height]="MAP_HEIGHT"></canvas>
-
-    <!-- Map Bounds Border -->
-    <div class="map-bounds" [style.width.px]="MAP_WIDTH" [style.height.px]="MAP_HEIGHT"></div>
-
-    <!-- Drag Line (Holographic targeting) -->
-    <svg class="drag-line-layer" *ngIf="isLineDragging && selectedNode">
-      <defs>
-        <filter id="glow">
-          <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
-          <feMerge>
-            <feMergeNode in="coloredBlur"/>
-            <feMergeNode in="SourceGraphic"/>
-          </feMerge>
-        </filter>
-      </defs>
-      <line 
-        [attr.x1]="selectedNode.x" 
-        [attr.y1]="selectedNode.y" 
-        [attr.x2]="dragCurrentX" 
-        [attr.y2]="dragCurrentY" 
-        stroke="#00e5ff" 
-        stroke-width="12" 
-        stroke-dasharray="20,20"
-        class="animated-dash"
-        filter="url(#glow)"/>
-      <circle [attr.cx]="dragCurrentX" [attr.cy]="dragCurrentY" r="20" fill="none" stroke="#00e5ff" stroke-width="4" filter="url(#glow)" class="target-reticle"/>
-    </svg>
-
-    <!-- Troop Movements -->
-    <div *ngFor="let m of movements" 
-         class="troop-swarm"
-         [ngClass]="['swarm-' + m.owner, 'swarm-' + m.unitType, m.combating ? 'combating' : '']"
-         [style.left.px]="m.startX + ((m.targetX - m.startX) * (m.progress / m.totalDistance))"
-         [style.top.px]="m.startY + ((m.targetY - m.startY) * (m.progress / m.totalDistance))">
-      {{ formatTroops(m.amount) }}
-      <div *ngIf="m.unitType === 'heavy'" class="heavy-indicator">🛡️ HEAVY</div>
-    </div>
-
-    <!-- Nodes -->
-    <div *ngFor="let node of nodes" 
-         class="node"
-         [ngClass]="['node-' + node.owner, 'type-' + node.type]"
-         [class.selected]="selectedNode?.id === node.id"
-         [style.left.px]="node.x"
-         [style.top.px]="node.y">
-      
-      <!-- Node Outer Rings (Energy Shields) -->
-      <div class="shield-ring"></div>
-      
-      <!-- Pulsing Node Inner Body -->
-      <div class="node-inner" [class.combating-node]="node.pushX !== 0 || node.pushY !== 0">
-        <span class="troop-count">{{ formatTroops(node.troops) }}</span>
-        
-        <!-- Upgrade Button -->
-        <div *ngIf="node.owner === myFaction && node.level < 5 && node.type !== 'camp'" 
-             class="upgrade-btn" 
-             (click)="upgradeNode(node, $event)"
-             (touchstart)="upgradeNode(node, $event)">
-             <span>LVL {{node.level}}</span>
-             <span class="cost">⬆️ {{getCost(node)}}</span>
-        </div>
-      </div>
-      
-      <div class="node-status" *ngIf="node.troops > node.capacity">
-        ⚠️ CRÍTICO
-      </div>
+      <button [class.active]="sendPercentage === 1.0" (click)="setPercentage(1.0)">MAX</button>
     </div>
   </div>
 
