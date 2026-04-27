@@ -7,37 +7,80 @@
      (mousedown)="onTouchStart($event)"
      (touchstart)="onTouchStart($event)">
 
+  <!-- OBSCURE OVERLAY FOR MENUS -->
+  <div *ngIf="gameState !== 'playing' && gameState !== 'simulation'" class="overlay-blur"></div>
+
   <!-- SPLASH SCREEN -->
   <div *ngIf="showSplash" class="splash-screen" @splashFade>
     <div class="splash-content">
-      <h1 class="game-title">DOTS STRATEGY</h1>
+      <h1 class="game-title neon-text epic-pulse">DOTS STRATEGY</h1>
+      <div class="divider"></div>
       <p class="developed-by">Desarrollado por</p>
       <a class="babylon-link" (click)="openBabylon()">BABYLON.IA</a>
     </div>
   </div>
 
   <!-- MAIN MENU -->
-  <div *ngIf="!showSplash && gameState === 'menu'" class="menu-screen">
+  <div *ngIf="!showSplash && gameState === 'menu'" class="menu-screen" @uiSlideUp>
     <h1 class="game-title neon-text">DOTS</h1>
-    <button class="btn-play" (click)="startGame('player')">Campaña Táctica</button>
-    <button class="btn-play btn-sim" (click)="startGame('simulation')">Simulador IAs</button>
-    <button class="btn-secondary" (click)="openBabylon()">Créditos a BABYLON.IA</button>
+    
+    <div class="menu-grid">
+      <button class="btn-primary" (click)="startGame('player')">
+        <span class="icon">⚔️</span> Campaña Local
+      </button>
+      <button class="btn-primary btn-p2p" (click)="initHost()">
+        <span class="icon">🌐</span> Crear Partida (P2P)
+      </button>
+      <button class="btn-primary btn-p2p" (click)="initJoin()">
+        <span class="icon">🔗</span> Unirse a Partida
+      </button>
+      <button class="btn-sim" (click)="startGame('simulation')">
+        <span class="icon">🤖</span> Simulador de IAs
+      </button>
+    </div>
+    
+    <button class="btn-secondary mt-auto" (click)="openBabylon()">Créditos a BABYLON.IA</button>
+  </div>
+
+  <!-- P2P HOSTING -->
+  <div *ngIf="!showSplash && gameState === 'hosting'" class="menu-screen" @uiSlideUp>
+    <h2 class="neon-text">Esperando Oponente...</h2>
+    <p class="sub-text">Comparte este código de enlace (Port ID) para que tu rival se conecte:</p>
+    
+    <div class="token-box">
+      <span class="token-text">{{ myPeerId || 'Generando código...' }}</span>
+      <button class="btn-icon" (click)="copyPeerId()">📋 Copiar</button>
+    </div>
+    
+    <div class="loading-spinner"></div>
+    <button class="btn-secondary" (click)="goMenu()">Cancelar</button>
+  </div>
+
+  <!-- P2P JOINING -->
+  <div *ngIf="!showSplash && gameState === 'joining'" class="menu-screen" @uiSlideUp>
+    <h2 class="neon-text">Conectar a Partida</h2>
+    <p class="sub-text">Ingresa el código del anfitrión para batallar:</p>
+    
+    <input type="text" class="hacker-input" [(ngModel)]="joinPeerId" placeholder="Ej: abc123def456">
+    
+    <button class="btn-primary btn-p2p" (click)="connectToHost()">INICIAR ENLACE</button>
+    <button class="btn-secondary" (click)="goMenu()">Volver</button>
   </div>
 
   <!-- GAME OVER -->
-  <div *ngIf="!showSplash && gameState === 'gameover'" class="menu-screen">
+  <div *ngIf="!showSplash && gameState === 'gameover'" class="menu-screen" @uiSlideUp>
     <h1 class="game-title neon-text">{{ getWinner() }}</h1>
-    <button class="btn-play" (click)="startGame('player')">Jugar de Nuevo</button>
-    <button class="btn-secondary" (click)="gameState = 'menu'">Menú Principal</button>
+    <div class="divider"></div>
+    <button class="btn-primary" (click)="goMenu()">Menú Principal</button>
   </div>
 
   <!-- TACTICAL HUD -->
-  <div *ngIf="!showSplash && gameState === 'playing'" class="tactical-hud">
-    <div class="hud-panel">
-      <span>Enviar: </span>
+  <div *ngIf="!showSplash && (gameState === 'playing' || gameState === 'simulation')" class="tactical-hud" @uiSlideUp>
+    <div class="hud-panel glass-panel">
+      <span>COMANDOS DE FLOTA: </span>
       <button [class.active]="sendPercentage === 0.25" (click)="setPercentage(0.25)">25%</button>
       <button [class.active]="sendPercentage === 0.5" (click)="setPercentage(0.5)">50%</button>
-      <button [class.active]="sendPercentage === 1.0" (click)="setPercentage(1.0)">100%</button>
+      <button [class.active]="sendPercentage === 1.0" (click)="setPercentage(1.0)">ALL-IN</button>
     </div>
   </div>
 
@@ -48,19 +91,34 @@
        [style.width.px]="MAP_WIDTH"
        [style.height.px]="MAP_HEIGHT">
     
+    <!-- Epic Background Grid for camera context -->
+    <div class="tactical-grid"></div>
+
     <!-- Map Bounds Border -->
     <div class="map-bounds" [style.width.px]="MAP_WIDTH" [style.height.px]="MAP_HEIGHT"></div>
 
-    <!-- Drag Line -->
+    <!-- Drag Line (Holographic targeting) -->
     <svg class="drag-line-layer" *ngIf="isLineDragging && selectedNode">
+      <defs>
+        <filter id="glow">
+          <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+          <feMerge>
+            <feMergeNode in="coloredBlur"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+      </defs>
       <line 
         [attr.x1]="selectedNode.x" 
         [attr.y1]="selectedNode.y" 
         [attr.x2]="dragCurrentX" 
         [attr.y2]="dragCurrentY" 
-        stroke="#4fc3f7" 
-        stroke-width="8" 
-        stroke-dasharray="16,16"/>
+        stroke="#00e5ff" 
+        stroke-width="12" 
+        stroke-dasharray="20,20"
+        class="animated-dash"
+        filter="url(#glow)"/>
+      <circle [attr.cx]="dragCurrentX" [attr.cy]="dragCurrentY" r="20" fill="none" stroke="#00e5ff" stroke-width="4" filter="url(#glow)" class="target-reticle"/>
     </svg>
 
     <!-- Troop Movements -->
@@ -70,7 +128,7 @@
          [style.left.px]="m.startX + ((m.targetX - m.startX) * (m.progress / m.totalDistance))"
          [style.top.px]="m.startY + ((m.targetY - m.startY) * (m.progress / m.totalDistance))">
       {{ formatTroops(m.amount) }}
-      <div *ngIf="m.unitType === 'heavy'" class="heavy-indicator">🛡️</div>
+      <div *ngIf="m.unitType === 'heavy'" class="heavy-indicator">🛡️ HEAVY</div>
     </div>
 
     <!-- Nodes -->
@@ -81,22 +139,25 @@
          [style.left.px]="node.x"
          [style.top.px]="node.y">
       
+      <!-- Node Outer Rings (Energy Shields) -->
+      <div class="shield-ring"></div>
+      
       <!-- Pulsing Node Inner Body -->
       <div class="node-inner" [class.combating-node]="node.pushX !== 0 || node.pushY !== 0">
         <span class="troop-count">{{ formatTroops(node.troops) }}</span>
         
-        <!-- Upgrade Button for Player -->
-        <div *ngIf="node.owner === 'player' && node.level < 5 && node.type !== 'camp'" 
+        <!-- Upgrade Button -->
+        <div *ngIf="node.owner === myFaction && node.level < 5 && node.type !== 'camp'" 
              class="upgrade-btn" 
              (click)="upgradeNode(node, $event)"
              (touchstart)="upgradeNode(node, $event)">
-             LVL {{node.level}} <br> ⬆️ {{getCost(node)}}
+             <span>LVL {{node.level}}</span>
+             <span class="cost">⬆️ {{getCost(node)}}</span>
         </div>
       </div>
       
-      <!-- Node Status UI (Capacity warnings) -->
       <div class="node-status" *ngIf="node.troops > node.capacity">
-        ⚠️ Lleno
+        ⚠️ CRÍTICO
       </div>
     </div>
   </div>

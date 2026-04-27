@@ -1,20 +1,22 @@
 import { Component, OnInit, OnDestroy, ElementRef, ViewChild } from '@angular/core';
 import { trigger, style, animate, transition, keyframes } from '@angular/animations';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import Peer from 'peerjs';
 
 export type NodeType = 'city' | 'fortress' | 'forge' | 'camp';
 export type UnitType = 'light' | 'heavy';
 
 export interface GameNode {
   id: number;
-  x: number; // logical X (0 to 10000 for a large map)
-  y: number; // logical Y (0 to 10000)
+  x: number;
+  y: number;
   troops: number;
   owner: 'player' | 'enemy' | 'neutral' | 'ai_macro' | 'ai_micro';
   type: NodeType;
   level: number;
   capacity: number;
-  pushX: number; // For push physics
+  pushX: number;
   pushY: number;
 }
 
@@ -27,7 +29,7 @@ export interface TroopMovement {
   amount: number;
   owner: 'player' | 'enemy' | 'neutral' | 'ai_macro' | 'ai_micro';
   unitType: UnitType;
-  progress: number; // Distance traveled
+  progress: number;
   totalDistance: number;
   targetNodeId: number | null;
   combating: boolean;
@@ -36,22 +38,27 @@ export interface TroopMovement {
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.css'],
   animations: [
     trigger('splashFade', [
       transition(':leave', [
-        animate('1s ease-in', style({ opacity: 0 }))
+        animate('1s cubic-bezier(0.4, 0, 0.2, 1)', style({ opacity: 0, transform: 'scale(1.1)' }))
+      ])
+    ]),
+    trigger('uiSlideUp', [
+      transition(':enter', [
+        style({ opacity: 0, transform: 'translateY(20px)' }),
+        animate('0.4s ease-out', style({ opacity: 1, transform: 'translateY(0)' }))
       ])
     ])
   ]
 })
 export class AppComponent implements OnInit, OnDestroy {
   showSplash = true;
-  gameState: 'menu' | 'playing' | 'gameover' | 'simulation' = 'menu';
+  gameState: 'menu' | 'playing' | 'gameover' | 'simulation' | 'hosting' | 'joining' = 'menu';
   
-  // Large Logical Map Size
   MAP_WIDTH = 4000;
   MAP_HEIGHT = 4000;
 
@@ -63,27 +70,32 @@ export class AppComponent implements OnInit, OnDestroy {
   dragCurrentX = 0;
   dragCurrentY = 0;
   isLineDragging = false;
-
-  sendPercentage: number = 0.5; // 25%, 50%, 100%
+  sendPercentage: number = 0.5;
 
   gameLoop: any;
   lastTick = 0;
-
-  // AI Orchestrator Timers
   lastMicroTick = 0;
   lastMacroTick = 0;
 
-  // Camera (Pan & Zoom)
-  scale = 0.5; // Start zoomed out
+  // Camera
+  scale = 0.4;
   panX = 0;
   panY = 0;
-  
-  // Touch Handling for Camera
   isPanning = false;
   lastTouchX = 0;
   lastTouchY = 0;
   initialPinchDistance = 0;
   initialScale = 1;
+
+  // Multiplayer (P2P via PeerJS)
+  peer: Peer | null = null;
+  conn: any = null;
+  myPeerId: string = '';
+  joinPeerId: string = '';
+  isHost = false;
+  isMultiplayer = false;
+  lastSyncTick = 0;
+  myFaction: 'player' | 'enemy' = 'player'; // Host is player, Client is enemy
 
   @ViewChild('mapContainer') mapContainer!: ElementRef;
 
@@ -96,6 +108,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     this.stopGame();
+    if (this.peer) this.peer.destroy();
   }
 
   centerCamera() {
@@ -105,14 +118,100 @@ export class AppComponent implements OnInit, OnDestroy {
     this.panY = (vh / 2) - (this.MAP_HEIGHT * this.scale / 2);
   }
 
-  setPercentage(p: number) {
-    this.sendPercentage = p;
+  setPercentage(p: number) { this.sendPercentage = p; }
+
+  // --- MULTIPLAYER SETUP ---
+  initHost() {
+    this.gameState = 'hosting';
+    this.isHost = true;
+    this.isMultiplayer = true;
+    this.myFaction = 'player';
+    
+    this.peer = new Peer(); // Auto-generates a random ID
+    this.peer.on('open', (id) => {
+      this.myPeerId = id;
+    });
+
+    this.peer.on('connection', (connection) => {
+      this.conn = connection;
+      this.setupConnection();
+      // Start the game once a client connects
+      this.startGame('player'); 
+    });
   }
 
+  initJoin() {
+    this.gameState = 'joining';
+    this.isHost = false;
+    this.isMultiplayer = true;
+    this.myFaction = 'enemy'; // Client controls the 'enemy' faction visually
+
+    this.peer = new Peer();
+    this.peer.on('open', (id) => {
+      this.myPeerId = id;
+    });
+  }
+
+  connectToHost() {
+    if (!this.joinPeerId || !this.peer) return;
+    this.conn = this.peer.connect(this.joinPeerId);
+    this.setupConnection();
+  }
+
+  setupConnection() {
+    this.conn.on('open', () => {
+      console.log('P2P Connection Established!');
+      if (!this.isHost) {
+        this.gameState = 'playing';
+      }
+    });
+
+    this.conn.on('data', (data: any) => {
+      if (this.isHost) {
+        // Host receives commands from Client
+        if (data.type === 'action') {
+           this.processClientAction(data.action);
+        }
+      } else {
+        // Client receives authoritative State from Host
+        if (data.type === 'state') {
+           this.nodes = data.state.nodes;
+           this.movements = data.state.movements;
+        } else if (data.type === 'gameover') {
+           this.gameState = 'gameover';
+           this.stopGame();
+        }
+      }
+    });
+
+    this.conn.on('close', () => {
+      alert("Conexión perdida con el oponente.");
+      this.gameState = 'menu';
+      this.stopGame();
+    });
+  }
+
+  processClientAction(action: any) {
+    if (action.cmd === 'send') {
+       const source = this.nodes.find(n => n.id === action.sourceId);
+       const target = action.targetId ? this.nodes.find(n => n.id === action.targetId) : null;
+       if (source && target) {
+           this.sendTroops(source, target, action.percentage);
+       } else if (source && !target) {
+           this.sendTroopsToPoint(source, action.targetX, action.targetY, action.percentage);
+       }
+    } else if (action.cmd === 'upgrade') {
+       const node = this.nodes.find(n => n.id === action.nodeId);
+       if (node) this.upgradeNodeCore(node);
+    }
+  }
+
+  // --- GAME START ---
   startGame(mode: 'player' | 'simulation' = 'player') {
     this.gameState = mode === 'simulation' ? 'simulation' : 'playing';
-    
-    // Spread nodes across a large 4000x4000 map
+    this.isMultiplayer = this.conn !== null;
+    this.myFaction = this.isHost || !this.isMultiplayer ? 'player' : 'enemy';
+
     if (mode === 'player') {
       this.nodes = [
         { id: 1, x: 800, y: 3200, troops: 15000, owner: 'player', type: 'city', level: 1, capacity: 50000, pushX:0, pushY:0 },
@@ -140,6 +239,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.lastTick = performance.now();
     this.lastMicroTick = this.lastTick;
     this.lastMacroTick = this.lastTick;
+    this.lastSyncTick = this.lastTick;
     this.gameLoop = requestAnimationFrame((t) => this.tick(t));
   }
 
@@ -153,67 +253,64 @@ export class AppComponent implements OnInit, OnDestroy {
     return (amount / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
   }
 
+  // --- GAME LOOP ---
   tick(time: number) {
     const dt = (time - this.lastTick) / 1000;
     this.lastTick = time;
 
-    // 1. Economy & Generation
-    this.nodes.forEach(n => {
-      if (n.owner !== 'neutral') {
-        let genRate = 2000 * n.level;
-        if (n.type === 'forge') genRate *= 0.5;
-        if (n.type === 'fortress') genRate *= 0.3;
-        if (n.type === 'camp') genRate *= 0.0;
-        
-        n.troops += genRate * dt; 
-
-        if (n.troops > n.capacity) {
-          n.troops -= (n.troops - n.capacity) * 0.1 * dt; 
-        }
-      }
-
-      // Decay physics push
-      n.pushX *= 0.9;
-      n.pushY *= 0.9;
-      // Clamp to map bounds
-      n.x = Math.max(40, Math.min(this.MAP_WIDTH - 40, n.x + n.pushX * dt));
-      n.y = Math.max(40, Math.min(this.MAP_HEIGHT - 40, n.y + n.pushY * dt));
-    });
-
-    // 2. Movements & Combat
-    for (let i = this.movements.length - 1; i >= 0; i--) {
-      const m = this.movements[i];
+    // Only Host or Singleplayer simulates physics/economy
+    if (!this.isMultiplayer || this.isHost) {
       
-      if (!m.combating) {
-        // Speed in logical units per second
-        const speed = m.unitType === 'heavy' ? 400 : 800;
-        m.progress += speed * dt;
-        
-        if (m.progress >= m.totalDistance - 40) { // 40 is node radius
-          m.combating = true;
-          // If moving to empty space, create camp and finish
-          if (m.targetNodeId === null) {
-            this.createCamp(m);
-            this.movements.splice(i, 1);
-            continue;
+      this.nodes.forEach(n => {
+        if (n.owner !== 'neutral') {
+          let genRate = 2000 * n.level;
+          if (n.type === 'forge') genRate *= 0.5;
+          if (n.type === 'fortress') genRate *= 0.3;
+          if (n.type === 'camp') genRate *= 0.0;
+          n.troops += genRate * dt; 
+          if (n.troops > n.capacity) n.troops -= (n.troops - n.capacity) * 0.1 * dt; 
+        }
+
+        n.pushX *= 0.9; n.pushY *= 0.9;
+        n.x = Math.max(40, Math.min(this.MAP_WIDTH - 40, n.x + n.pushX * dt));
+        n.y = Math.max(40, Math.min(this.MAP_HEIGHT - 40, n.y + n.pushY * dt));
+      });
+
+      for (let i = this.movements.length - 1; i >= 0; i--) {
+        const m = this.movements[i];
+        if (!m.combating) {
+          const speed = m.unitType === 'heavy' ? 400 : 800;
+          m.progress += speed * dt;
+          if (m.progress >= m.totalDistance - 40) {
+            m.combating = true;
+            if (m.targetNodeId === null) {
+              this.createCamp(m);
+              this.movements.splice(i, 1);
+              continue;
+            }
           }
         }
+        if (m.combating) this.processCombatTick(m, dt, i);
       }
 
-      if (m.combating) {
-        this.processCombatTick(m, dt, i);
+      if (this.gameState === 'playing' && !this.isMultiplayer) {
+        this.runBasicEnemyAI();
+      } else if (this.gameState === 'simulation') {
+        this.runSimulationAI(time);
+      }
+
+      this.checkWinCondition();
+
+      // Host Syncs state to Client (every 50ms)
+      if (this.isHost && time - this.lastSyncTick > 50) {
+        this.lastSyncTick = time;
+        if (this.conn && this.conn.open) {
+           this.conn.send({ type: 'state', state: { nodes: this.nodes, movements: this.movements } });
+        }
       }
     }
 
-    // 3. AI
-    if (this.gameState === 'playing') {
-      this.runBasicEnemyAI();
-    } else if (this.gameState === 'simulation') {
-      this.runSimulationAI(time);
-    }
-
-    this.checkWinCondition();
-
+    // Client still loops for local camera rendering
     if (this.gameState === 'playing' || this.gameState === 'simulation') {
       this.gameLoop = requestAnimationFrame((t) => this.tick(t));
     }
@@ -236,15 +333,12 @@ export class AppComponent implements OnInit, OnDestroy {
 
   processCombatTick(movement: TroopMovement, dt: number, index: number) {
     const target = this.nodes.find(n => n.id === movement.targetNodeId);
-    
-    // If target destroyed by someone else, convert swarm to camp
     if (!target) {
        this.createCamp(movement);
        this.movements.splice(index, 1);
        return;
     }
 
-    // Calculate direction vector for pushing
     const dx = target.x - movement.startX;
     const dy = target.y - movement.startY;
     const len = Math.hypot(dx, dy);
@@ -252,52 +346,53 @@ export class AppComponent implements OnInit, OnDestroy {
     const dirY = len > 0 ? dy / len : 0;
 
     if (target.owner === movement.owner) {
-      // Reinforce rapidly
       const transferRate = 20000 * dt;
       const amountToTransfer = Math.min(movement.amount, transferRate);
       target.troops += amountToTransfer;
       movement.amount -= amountToTransfer;
-      
-      if (movement.amount <= 0) {
-        this.movements.splice(index, 1);
-      }
+      if (movement.amount <= 0) this.movements.splice(index, 1);
     } else {
-      // Continuous Combat Over Time (Damage & Push)
-      let combatRate = 15000 * dt; // Troops lost per tick
+      let combatRate = 15000 * dt;
       let damageToTarget = combatRate;
       let damageToSwarm = combatRate;
 
       if (movement.unitType === 'heavy') damageToTarget *= 2.0;
       if (target.type === 'fortress') damageToTarget *= 0.5;
 
-      // Apply Push Physics
       const pushForce = movement.unitType === 'heavy' ? 400 : 200;
       target.pushX += dirX * pushForce * dt;
       target.pushY += dirY * pushForce * dt;
 
-      // Apply Damage
       const actualDamageTarget = Math.min(target.troops, damageToTarget);
       const actualDamageSwarm = Math.min(movement.amount, damageToSwarm);
 
       target.troops -= actualDamageTarget;
       movement.amount -= actualDamageSwarm;
 
-      // Capture Logic
       if (target.troops <= 0) {
         target.owner = movement.owner;
-        target.troops = movement.amount; // Remaining attackers garrison the node
+        target.troops = movement.amount;
         this.movements.splice(index, 1);
       } else if (movement.amount <= 0) {
-        this.movements.splice(index, 1); // Attack repelled
+        this.movements.splice(index, 1);
       }
     }
   }
 
   upgradeNode(node: GameNode, event?: Event) {
     if (event) event.stopPropagation();
-    if (node.owner !== 'player') return;
-    if (node.type === 'camp') return;
+    if (node.owner !== this.myFaction) return;
     
+    if (this.isMultiplayer && !this.isHost) {
+      // Send command to host
+      this.conn.send({ type: 'action', action: { cmd: 'upgrade', nodeId: node.id }});
+    } else {
+      this.upgradeNodeCore(node);
+    }
+  }
+
+  upgradeNodeCore(node: GameNode) {
+    if (node.type === 'camp') return;
     const cost = 10000 * node.level;
     if (node.troops >= cost && node.level < 5) {
       node.troops -= cost;
@@ -345,7 +440,6 @@ export class AppComponent implements OnInit, OnDestroy {
     if (time - this.lastMacroTick > 2500) {
       this.lastMacroTick = time;
       const macroNodes = this.nodes.filter(n => n.owner === 'ai_macro');
-      
       macroNodes.forEach(n => {
           if (n.troops > 15000 * n.level && n.level < 4 && n.type !== 'camp') {
               n.troops -= 10000 * n.level;
@@ -353,18 +447,13 @@ export class AppComponent implements OnInit, OnDestroy {
               n.capacity += 50000;
           }
       });
-
       let totalTroops = macroNodes.reduce((acc, n) => acc + n.troops, 0);
       if (totalTroops > 80000) {
-        let biggestThreat = this.nodes.filter(n => n.owner !== 'ai_macro' && n.owner !== 'neutral')
-          .sort((a,b) => b.troops - a.troops)[0];
+        let biggestThreat = this.nodes.filter(n => n.owner !== 'ai_macro' && n.owner !== 'neutral').sort((a,b) => b.troops - a.troops)[0];
         if (!biggestThreat) biggestThreat = this.nodes.filter(n => n.owner === 'neutral').sort((a,b) => b.troops - a.troops)[0];
-
         if (biggestThreat) {
           macroNodes.forEach(source => {
-            if (source.troops > source.capacity * 0.3) {
-                this.sendTroops(source, biggestThreat, 1.0); 
-            }
+            if (source.troops > source.capacity * 0.3) this.sendTroops(source, biggestThreat, 1.0); 
           });
         }
       }
@@ -375,7 +464,11 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.gameState === 'playing') {
       const hasPlayer = this.nodes.some(n => n.owner === 'player');
       const hasEnemy = this.nodes.some(n => n.owner === 'enemy');
-      if (!hasPlayer || !hasEnemy) { this.gameState = 'gameover'; this.stopGame(); }
+      if (!hasPlayer || !hasEnemy) { 
+        this.gameState = 'gameover'; 
+        if (this.isHost && this.conn) this.conn.send({ type: 'gameover' });
+        this.stopGame(); 
+      }
     } else if (this.gameState === 'simulation') {
       const hasMicro = this.nodes.some(n => n.owner === 'ai_micro');
       const hasMacro = this.nodes.some(n => n.owner === 'ai_macro');
@@ -383,38 +476,27 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
-  // --- Input Handling (Zoom, Pan, Drag Line) ---
-  
+  // --- Input Handling ---
   getLogicalCoord(clientX: number, clientY: number) {
-    return {
-      x: (clientX - this.panX) / this.scale,
-      y: (clientY - this.panY) / this.scale
-    };
+    return { x: (clientX - this.panX) / this.scale, y: (clientY - this.panY) / this.scale };
   }
 
   onTouchStart(e: TouchEvent | MouseEvent) {
     if (this.gameState === 'simulation') return;
     
     if (e instanceof TouchEvent && e.touches.length === 2) {
-      // Pinch to Zoom
-      this.isPanning = false;
-      this.isLineDragging = false;
-      this.selectedNode = null;
-      this.initialPinchDistance = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
+      this.isPanning = false; this.isLineDragging = false; this.selectedNode = null;
+      this.initialPinchDistance = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
       this.initialScale = this.scale;
       return;
     }
 
     const clientX = e instanceof TouchEvent ? e.touches[0].clientX : e.clientX;
     const clientY = e instanceof TouchEvent ? e.touches[0].clientY : e.clientY;
-    
     const logical = this.getLogicalCoord(clientX, clientY);
     const hitNode = this.getNodeAtPosition(logical.x, logical.y);
 
-    if (hitNode && hitNode.owner === 'player') {
+    if (hitNode && hitNode.owner === this.myFaction) {
       this.selectedNode = hitNode;
       this.isLineDragging = true;
       this.dragCurrentX = logical.x;
@@ -428,13 +510,9 @@ export class AppComponent implements OnInit, OnDestroy {
 
   onTouchMove(e: TouchEvent | MouseEvent) {
     if (e instanceof TouchEvent && e.touches.length === 2) {
-      // Handle Pinch
-      const dist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
+      const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
       const newScale = this.initialScale * (dist / this.initialPinchDistance);
-      this.scale = Math.max(0.2, Math.min(newScale, 2.0)); // Clamp scale
+      this.scale = Math.max(0.15, Math.min(newScale, 2.5));
       return;
     }
 
@@ -448,23 +526,36 @@ export class AppComponent implements OnInit, OnDestroy {
     } else if (this.isPanning) {
       const dx = clientX - this.lastTouchX;
       const dy = clientY - this.lastTouchY;
-      this.panX += dx;
-      this.panY += dy;
-      this.lastTouchX = clientX;
-      this.lastTouchY = clientY;
+      this.panX += dx; this.panY += dy;
+      this.lastTouchX = clientX; this.lastTouchY = clientY;
     }
   }
 
   onTouchEnd(e: TouchEvent | MouseEvent) {
     if (this.isLineDragging && this.selectedNode) {
       const targetNode = this.getNodeAtPosition(this.dragCurrentX, this.dragCurrentY);
-      if (targetNode && targetNode.id !== this.selectedNode.id) {
-        this.sendTroops(this.selectedNode, targetNode, this.sendPercentage);
-      } else if (!targetNode) {
-        this.sendTroopsToPoint(this.selectedNode, this.dragCurrentX, this.dragCurrentY, this.sendPercentage);
+      
+      if (this.isMultiplayer && !this.isHost) {
+         // Send request to host
+         this.conn.send({
+           type: 'action',
+           action: {
+             cmd: 'send',
+             sourceId: this.selectedNode.id,
+             targetId: targetNode ? targetNode.id : null,
+             targetX: this.dragCurrentX,
+             targetY: this.dragCurrentY,
+             percentage: this.sendPercentage
+           }
+         });
+      } else {
+         if (targetNode && targetNode.id !== this.selectedNode.id) {
+           this.sendTroops(this.selectedNode, targetNode, this.sendPercentage);
+         } else if (!targetNode) {
+           this.sendTroopsToPoint(this.selectedNode, this.dragCurrentX, this.dragCurrentY, this.sendPercentage);
+         }
       }
     }
-
     this.isLineDragging = false;
     this.isPanning = false;
     this.selectedNode = null;
@@ -475,17 +566,11 @@ export class AppComponent implements OnInit, OnDestroy {
     const zoomIntensity = 0.1;
     const wheel = e.deltaY < 0 ? 1 : -1;
     const zoomFactor = Math.exp(wheel * zoomIntensity);
+    const mouseX = e.clientX; const mouseY = e.clientY;
+    const newScale = Math.max(0.15, Math.min(this.scale * zoomFactor, 2.5));
     
-    // Zoom towards mouse pointer
-    const mouseX = e.clientX;
-    const mouseY = e.clientY;
-    
-    const newScale = Math.max(0.2, Math.min(this.scale * zoomFactor, 2.0));
-    
-    // Adjust pan to keep point under mouse
     this.panX = mouseX - (mouseX - this.panX) * (newScale / this.scale);
     this.panY = mouseY - (mouseY - this.panY) * (newScale / this.scale);
-    
     this.scale = newScale;
   }
 
@@ -513,33 +598,27 @@ export class AppComponent implements OnInit, OnDestroy {
     
     this.movements.push({
       id: this.movementIdCounter++,
-      startX: source.x,
-      startY: source.y,
-      targetX: targetX,
-      targetY: targetY,
-      amount,
-      owner: source.owner,
+      startX: source.x, startY: source.y,
+      targetX: targetX, targetY: targetY,
+      amount, owner: source.owner,
       unitType: source.type === 'forge' ? 'heavy' : 'light',
-      progress: 0,
-      totalDistance: dist,
-      targetNodeId: targetId,
-      combating: false
+      progress: 0, totalDistance: dist,
+      targetNodeId: targetId, combating: false
     });
   }
 
-  openBabylon() {
-    window.open('https://babylonias.com/', '_system');
-  }
+  openBabylon() { window.open('https://babylonias.com/', '_system'); }
+  copyPeerId() { navigator.clipboard.writeText(this.myPeerId); }
+  goMenu() { this.gameState = 'menu'; if(this.peer) this.peer.destroy(); this.peer = null; this.conn = null; }
 
   getWinner(): string {
-    if (this.gameState === 'playing') {
-      return this.nodes.some(n => n.owner === 'player') ? '¡Victoria Jugador!' : 'Derrota...';
+    if (this.gameState === 'playing' || this.gameState === 'gameover') {
+      const won = this.nodes.some(n => n.owner === this.myFaction);
+      return won ? '¡Has Vencido, Comandante!' : 'Derrota Aplastante';
     } else {
-      return this.nodes.some(n => n.owner === 'ai_micro') ? '¡Victoria AI Micro/APM!' : '¡Victoria AI Macro!';
+      return this.nodes.some(n => n.owner === 'ai_micro') ? '¡Victoria IA Frenética!' : '¡Victoria Gran Estrategia!';
     }
   }
 
-  getCost(node: GameNode): string {
-    return this.formatTroops(10000 * node.level);
-  }
+  getCost(node: GameNode): string { return this.formatTroops(10000 * node.level); }
 }
