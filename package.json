@@ -1,12 +1,24 @@
 {
   "name": "dots-strategy-angular",
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "main": "main.js",
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "electron:build": "ng build --base-href ./ && npx electron-packager . DotsStrategy --platform=win32 --arch=x64 --out=release --overwrite"
+  },
+  "build": {
+    "appId": "com.babylonia.dotsstrategy",
+    "productName": "Dots Strategy",
+    "directories": {
+      "output": "release/"
+    },
+    "win": {
+      "target": "dir"
+    }
   },
   "private": true,
   "dependencies": {
@@ -31,6 +43,9 @@
     "@angular/cli": "^18.2.21",
     "@angular/compiler-cli": "^18.2.0",
     "@types/jasmine": "~5.1.0",
+    "electron": "^41.3.0",
+    "electron-builder": "^26.8.1",
+    "electron-packager": "^17.1.2",
     "jasmine-core": "~5.2.0",
     "karma": "~6.4.0",
     "karma-chrome-launcher": "~3.2.0",

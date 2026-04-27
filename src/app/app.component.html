@@ -26,7 +26,7 @@
     <h1 class="game-title neon-text">DOTS</h1>
     
     <div class="menu-grid">
-      <button class="btn-primary" (click)="startGame('player')">
+      <button class="btn-primary" (click)="openCampaign()">
         <span class="icon">⚔️</span> Campaña Local
       </button>
       <button class="btn-primary btn-p2p" (click)="initHost()">
@@ -39,33 +39,61 @@
         <span class="icon">🤖</span> Simulador de IAs
       </button>
       <button class="btn-secondary" (click)="openSettings()">
-        <span class="icon">⚙️</span> Rendimiento
+        <span class="icon">⚙️</span> Ajustes y Personalización
       </button>
     </div>
     
     <button class="btn-secondary mt-auto" (click)="openBabylon()">Créditos a BABYLON.IA</button>
   </div>
 
+  <!-- CAMPAIGN SELECTOR -->
+  <div *ngIf="gameState === 'campaign_select'" class="overlay menu-screen" @uiSlideUp>
+    <h2 class="neon-text">SELECCIONAR NIVEL</h2>
+    <div class="menu-grid" style="margin-top: 20px;">
+      <button class="btn-primary" (click)="startCampaign(1)">Nivel 1: Primer Contacto</button>
+      <button class="btn-primary" (click)="startCampaign(2)">Nivel 2: Duelo Cercano</button>
+      <button class="btn-primary" (click)="startCampaign(3)">Nivel 3: El Cuello de Botella</button>
+      <button class="btn-primary" (click)="startCampaign(4)">Nivel 4: Islas Dispersas</button>
+      <button class="btn-primary" (click)="startCampaign(5)">Nivel 5: Guerra Total</button>
+      <button class="btn-secondary" (click)="startGame('player')" style="margin-top: 20px;">Partida Libre (Escaramuza)</button>
+    </div>
+    <button class="btn-secondary mt-auto" (click)="goMenu()">Volver</button>
+  </div>
+
   <div *ngIf="gameState === 'settings'" class="overlay menu-screen" @uiSlideUp>
-    <h2 class="neon-text">RENDIMIENTO NATIVO</h2>
+    <h2 class="neon-text">AJUSTES DEL SISTEMA</h2>
     
-    <div class="settings-panel glass-panel">
+    <div class="settings-panel glass-panel" style="flex-direction: column;">
       <div class="setting-row">
-        <span>Límite de Fotogramas (FPS):</span>
-        <button [class.active]="targetFPS === 30" (click)="setFPS(30)">30 FPS</button>
-        <button [class.active]="targetFPS === 60" (click)="setFPS(60)">60 FPS</button>
-        <button [class.active]="targetFPS === 120" (click)="setFPS(120)">120 FPS</button>
+        <span>Rendimiento (FPS):</span>
+        <div>
+          <button [class.active]="targetFPS === 30" (click)="setFPS(30)">30</button>
+          <button [class.active]="targetFPS === 60" (click)="setFPS(60)">60</button>
+          <button [class.active]="targetFPS === 120" (click)="setFPS(120)">120</button>
+        </div>
       </div>
 
       <div class="setting-row">
         <span>Resolución (Pixel Ratio):</span>
-        <button [class.active]="resolutionScale === 0.5" (click)="setResolution(0.5)">50%</button>
-        <button [class.active]="resolutionScale === 0.75" (click)="setResolution(0.75)">75%</button>
-        <button [class.active]="resolutionScale === 1.0" (click)="setResolution(1.0)">100%</button>
+        <div>
+          <button [class.active]="resolutionScale === 0.5" (click)="setResolution(0.5)">50%</button>
+          <button [class.active]="resolutionScale === 0.75" (click)="setResolution(0.75)">75%</button>
+          <button [class.active]="resolutionScale === 1.0" (click)="setResolution(1.0)">100%</button>
+        </div>
+      </div>
+
+      <div class="setting-row" style="margin-top: 10px;">
+        <span>Paleta de Colores (Tema):</span>
+        <div>
+          <button [class.active]="activeTheme === 'classic'" (click)="setTheme('classic')">Clásico</button>
+          <button [class.active]="activeTheme === 'neon'" (click)="setTheme('neon')">Neón</button>
+          <button [class.active]="activeTheme === 'matrix'" (click)="setTheme('matrix')">Matriz</button>
+          <button [class.active]="activeTheme === 'monochrome'" (click)="setTheme('monochrome')">Monocromo</button>
+        </div>
       </div>
       
-      <p style="color: #aaa; text-align: center; font-size: 0.9rem;">
-        Nota: Al usar el nuevo motor Canvas2D, el juego es increíblemente rápido. Si notas calentamiento en el móvil, baja a 60 FPS o 50% de resolución.
+      <p style="color: #aaa; text-align: center; font-size: 0.9rem; margin-top: 10px;">
+        Motor Canvas2D nativo. Baja la resolución si tu móvil calienta.
       </p>
     </div>
     

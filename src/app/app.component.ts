@@ -27,8 +27,11 @@ export interface Dot {
   unitType: UnitType; flowId: number;
 }
 
-const FACTION_COLORS: Record<string, string> = {
-  'player': '#3498db', 'enemy': '#e74c3c', 'ai_micro': '#9b59b6', 'ai_macro': '#e67e22', 'neutral': '#7f8c8d'
+const THEMES: Record<string, Record<string, string>> = {
+  'classic': { 'player': '#3498db', 'enemy': '#e74c3c', 'ai_micro': '#9b59b6', 'ai_macro': '#e67e22', 'neutral': '#7f8c8d' },
+  'neon': { 'player': '#00e5ff', 'enemy': '#ff1744', 'ai_micro': '#d500f9', 'ai_macro': '#ff9100', 'neutral': '#78909c' },
+  'matrix': { 'player': '#00e676', 'enemy': '#ff9100', 'ai_micro': '#00b0ff', 'ai_macro': '#ffea00', 'neutral': '#546e7a' },
+  'monochrome': { 'player': '#ffffff', 'enemy': '#ff0000', 'ai_micro': '#aaaaaa', 'ai_macro': '#666666', 'neutral': '#333333' }
 };
 
 @Component({
@@ -44,10 +47,11 @@ const FACTION_COLORS: Record<string, string> = {
 })
 export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
   showSplash = true;
-  gameState: 'menu' | 'playing' | 'gameover' | 'simulation' | 'hosting' | 'joining' | 'settings' = 'menu';
+  gameState: 'menu' | 'playing' | 'gameover' | 'simulation' | 'hosting' | 'joining' | 'settings' | 'campaign_select' = 'menu';
   
   MAP_WIDTH = 4000; MAP_HEIGHT = 4000;
   mapType: string = 'standard';
+  currentLevel: number = 0; // 0 for skirmish/multiplayer, 1-5 for Campaign
 
   nodes: GameNode[] = []; flows: Flow[] = []; dots: Dot[] = [];
   flowIdCounter = 0; dotIdCounter = 0;
@@ -66,6 +70,8 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
 
   targetFPS = 60; frameInterval = 1000 / 60;
   resolutionScale = 1.0; dpr = 1;
+  activeTheme = 'classic';
+  factionColors = THEMES['classic'];
 
   peer: Peer | null = null; conn: any = null;
   myPeerId: string = ''; joinPeerId: string = '';
@@ -107,7 +113,9 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
   updateFrameInterval() { this.frameInterval = 1000 / this.targetFPS; }
   setFPS(fps: number) { this.targetFPS = fps; this.updateFrameInterval(); }
   setResolution(scale: number) { this.resolutionScale = scale; this.initCanvas(); }
+  setTheme(theme: string) { this.activeTheme = theme; this.factionColors = THEMES[theme]; this.initCanvas(); }
   openSettings() { this.gameState = 'settings'; }
+  openCampaign() { this.gameState = 'campaign_select'; }
   closeSettings() { this.gameState = 'menu'; }
   setPercentage(p: number) { this.sendPercentage = p; }
   openBabylon() { window.open('https://babylonias.com/', '_system'); }
@@ -155,18 +163,59 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   // --- GAME START ---
-  generateMap(mode: 'player' | 'simulation') {
-    const types = ['standard', 'chokepoint', 'scattered', 'hexagon', 'duel', 'crossfire'];
-    this.mapType = types[Math.floor(Math.random() * types.length)];
+  startCampaign(level: number) {
+    this.gameState = 'playing';
+    this.currentLevel = level;
+    this.isMultiplayer = false;
+    this.myFaction = 'player';
+    
+    this.generateMap('player', level);
+
+    this.flows = []; this.dots = [];
+    this.lastTick = performance.now(); this.lastFrameTime = this.lastTick;
+    this.lastMicroTick = this.lastTick; this.lastMacroTick = this.lastTick; this.lastSyncTick = this.lastTick;
+    this.centerCamera();
+    this.gameLoop = requestAnimationFrame((t) => this.tick(t));
+  }
+
+  startGame(mode: 'player' | 'simulation' = 'player') {
+    this.gameState = mode === 'simulation' ? 'simulation' : 'playing';
+    this.isMultiplayer = this.conn !== null;
+    this.myFaction = this.isHost || !this.isMultiplayer ? 'player' : 'enemy';
+    this.currentLevel = 0;
+
+    this.generateMap(mode, 0);
+
+    this.flows = []; this.dots = [];
+    this.lastTick = performance.now(); this.lastFrameTime = this.lastTick;
+    this.lastMicroTick = this.lastTick; this.lastMacroTick = this.lastTick; this.lastSyncTick = this.lastTick;
+    this.centerCamera();
+    this.gameLoop = requestAnimationFrame((t) => this.tick(t));
+  }
+
+  generateMap(mode: 'player' | 'simulation', level: number = 0) {
+    let mapType = this.mapType;
+    if (level === 0) {
+       const types = ['standard', 'chokepoint', 'scattered', 'hexagon', 'duel', 'crossfire'];
+       mapType = types[Math.floor(Math.random() * types.length)];
+    } else {
+       const campaignMaps = ['standard', 'duel', 'chokepoint', 'scattered', 'hexagon', 'crossfire'];
+       mapType = campaignMaps[level - 1] || 'hexagon';
+    }
+    
     let pOwner: any = mode === 'player' ? 'player' : 'ai_micro';
     let eOwner: any = mode === 'player' ? 'enemy' : 'ai_macro';
+    
+    let eTroops = 5000 + (level * 2000);
+    let pTroops = 5000;
+
     this.nodes = [];
 
-    switch(this.mapType) {
+    switch(mapType) {
       case 'hexagon':
         this.nodes = [
-          { id: 1, x: 2000, y: 3500, troops: 5000, owner: pOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
-          { id: 2, x: 2000, y: 500, troops: 5000, owner: eOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 1, x: 2000, y: 3500, troops: pTroops, owner: pOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 2, x: 2000, y: 500, troops: eTroops, owner: eOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
           { id: 3, x: 2000, y: 2000, troops: 20000, owner: 'neutral', type: 'fortress', level: 3, capacity: 100000, pushX:0, pushY:0 },
           { id: 4, x: 1000, y: 1200, troops: 3000, owner: 'neutral', type: 'forge', level: 1, capacity: 15000, pushX:0, pushY:0 },
           { id: 5, x: 3000, y: 1200, troops: 3000, owner: 'neutral', type: 'forge', level: 1, capacity: 15000, pushX:0, pushY:0 },
@@ -176,23 +225,23 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
       case 'duel':
         this.nodes = [
           { id: 1, x: 500, y: 2000, troops: 15000, owner: pOwner, type: 'fortress', level: 2, capacity: 50000, pushX:0, pushY:0 },
-          { id: 2, x: 3500, y: 2000, troops: 15000, owner: eOwner, type: 'fortress', level: 2, capacity: 50000, pushX:0, pushY:0 },
+          { id: 2, x: 3500, y: 2000, troops: 15000 + (level * 5000), owner: eOwner, type: 'fortress', level: 2, capacity: 50000, pushX:0, pushY:0 },
           { id: 3, x: 2000, y: 1000, troops: 5000, owner: 'neutral', type: 'forge', level: 1, capacity: 15000, pushX:0, pushY:0 },
           { id: 4, x: 2000, y: 3000, troops: 5000, owner: 'neutral', type: 'forge', level: 1, capacity: 15000, pushX:0, pushY:0 },
           { id: 5, x: 2000, y: 2000, troops: 8000, owner: 'neutral', type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 }
         ]; break;
       case 'crossfire':
         this.nodes = [
-          { id: 1, x: 800, y: 800, troops: 6000, owner: pOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
-          { id: 2, x: 3200, y: 3200, troops: 6000, owner: pOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
-          { id: 3, x: 3200, y: 800, troops: 6000, owner: eOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
-          { id: 4, x: 800, y: 3200, troops: 6000, owner: eOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 1, x: 800, y: 800, troops: pTroops, owner: pOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 2, x: 3200, y: 3200, troops: pTroops, owner: pOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 3, x: 3200, y: 800, troops: eTroops, owner: eOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 4, x: 800, y: 3200, troops: eTroops, owner: eOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
           { id: 5, x: 2000, y: 2000, troops: 20000, owner: 'neutral', type: 'fortress', level: 3, capacity: 80000, pushX:0, pushY:0 }
         ]; break;
       case 'chokepoint':
         this.nodes = [
-          { id: 1, x: 500, y: 2000, troops: 5000, owner: pOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
-          { id: 2, x: 3500, y: 2000, troops: 5000, owner: eOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 1, x: 500, y: 2000, troops: pTroops, owner: pOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 2, x: 3500, y: 2000, troops: eTroops, owner: eOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
           { id: 3, x: 2000, y: 2000, troops: 15000, owner: 'neutral', type: 'fortress', level: 3, capacity: 80000, pushX:0, pushY:0 },
           { id: 4, x: 1200, y: 1000, troops: 3000, owner: 'neutral', type: 'forge', level: 1, capacity: 20000, pushX:0, pushY:0 },
           { id: 5, x: 1200, y: 3000, troops: 3000, owner: 'neutral', type: 'forge', level: 1, capacity: 20000, pushX:0, pushY:0 },
@@ -201,8 +250,8 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
         ]; break;
       case 'scattered':
         this.nodes = [
-          { id: 1, x: 400, y: 400, troops: 5000, owner: pOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
-          { id: 2, x: 3600, y: 3600, troops: 5000, owner: eOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 1, x: 400, y: 400, troops: pTroops, owner: pOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 2, x: 3600, y: 3600, troops: eTroops, owner: eOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
           { id: 3, x: 1000, y: 3000, troops: 3000, owner: 'neutral', type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
           { id: 4, x: 3000, y: 1000, troops: 3000, owner: 'neutral', type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
           { id: 5, x: 2000, y: 1500, troops: 5000, owner: 'neutral', type: 'fortress', level: 1, capacity: 30000, pushX:0, pushY:0 },
@@ -212,8 +261,8 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
         ]; break;
       default:
         this.nodes = [
-          { id: 1, x: 800, y: 3200, troops: 5000, owner: pOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
-          { id: 2, x: 3200, y: 800, troops: 5000, owner: eOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 1, x: 800, y: 3200, troops: pTroops, owner: pOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+          { id: 2, x: 3200, y: 800, troops: eTroops, owner: eOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
           { id: 3, x: 2000, y: 2000, troops: 15000, owner: 'neutral', type: 'fortress', level: 2, capacity: 50000, pushX:0, pushY:0 },
           { id: 4, x: 800, y: 800, troops: 2000, owner: 'neutral', type: 'forge', level: 1, capacity: 15000, pushX:0, pushY:0 },
           { id: 5, x: 3200, y: 3200, troops: 2000, owner: 'neutral', type: 'forge', level: 1, capacity: 15000, pushX:0, pushY:0 },
@@ -221,20 +270,6 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
           { id: 7, x: 2000, y: 3200, troops: 3000, owner: 'neutral', type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 }
         ]; break;
     }
-  }
-
-  startGame(mode: 'player' | 'simulation' = 'player') {
-    this.gameState = mode === 'simulation' ? 'simulation' : 'playing';
-    this.isMultiplayer = this.conn !== null;
-    this.myFaction = this.isHost || !this.isMultiplayer ? 'player' : 'enemy';
-
-    this.generateMap(mode);
-
-    this.flows = []; this.dots = [];
-    this.lastTick = performance.now(); this.lastFrameTime = this.lastTick;
-    this.lastMicroTick = this.lastTick; this.lastMacroTick = this.lastTick; this.lastSyncTick = this.lastTick;
-    this.centerCamera();
-    this.gameLoop = requestAnimationFrame((t) => this.tick(t));
   }
 
   stopGame() { cancelAnimationFrame(this.gameLoop); }
@@ -366,7 +401,7 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
     this.flows.forEach(f => {
        const source = this.nodes.find(n => n.id === f.sourceId);
        if (source) {
-          ctx.strokeStyle = this.hexToRgba(FACTION_COLORS[f.owner], 0.2);
+          ctx.strokeStyle = this.hexToRgba(this.factionColors[f.owner], 0.2);
           ctx.beginPath(); ctx.moveTo(source.x, source.y); ctx.lineTo(f.targetX, f.targetY); ctx.stroke();
           
           // Badge interaction
@@ -377,7 +412,7 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
           if (remaining > 0) {
              ctx.fillStyle = '#222';
              ctx.beginPath(); ctx.roundRect(midX - 30, midY - 12, 60, 24, 12); ctx.fill();
-             ctx.fillStyle = FACTION_COLORS[f.owner];
+             ctx.fillStyle = this.factionColors[f.owner];
              ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
              ctx.fillText('x' + this.formatTroops(remaining), midX, midY);
           }
@@ -386,14 +421,14 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
 
     // Batch Rendering for Dots
     const dotsByColor: Record<string, Dot[]> = {};
-    for (const owner in FACTION_COLORS) dotsByColor[owner] = [];
-    this.dots.forEach(d => dotsByColor[d.owner].push(d));
+    for (const owner in this.factionColors) dotsByColor[owner] = [];
+    this.dots.forEach(d => { if(dotsByColor[d.owner]) dotsByColor[d.owner].push(d); });
 
-    for (const owner in FACTION_COLORS) {
+    for (const owner in this.factionColors) {
        const dots = dotsByColor[owner];
-       if (dots.length === 0) continue;
+       if (!dots || dots.length === 0) continue;
        
-       ctx.fillStyle = FACTION_COLORS[owner];
+       ctx.fillStyle = this.factionColors[owner];
        ctx.beginPath();
        dots.forEach(d => {
          if (d.unitType === 'heavy') {
@@ -415,7 +450,7 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
 
     // Nodes
     this.nodes.forEach(n => {
-      const color = FACTION_COLORS[n.owner] || '#555';
+      const color = this.factionColors[n.owner] || '#555';
       const isSelected = this.selectedNode?.id === n.id;
       const nx = n.x + ((n.pushX !== 0) ? (Math.random() - 0.5) * 4 : 0);
       const ny = n.y + ((n.pushY !== 0) ? (Math.random() - 0.5) * 4 : 0);
@@ -527,7 +562,8 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   runBasicEnemyAI() {
-    if (Math.random() < 0.005) { 
+    let aiChance = 0.005 + (this.currentLevel * 0.002);
+    if (Math.random() < aiChance) { 
       const enemies = this.nodes.filter(n => n.owner === 'enemy');
       if (enemies.length > 0) {
         const source = enemies[Math.floor(Math.random() * enemies.length)];
