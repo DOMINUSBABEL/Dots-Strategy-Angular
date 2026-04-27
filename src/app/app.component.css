@@ -27,6 +27,15 @@
   box-shadow: inset 0 0 100px rgba(0,0,0,1);
 }
 
+.territory-layer {
+  position: absolute;
+  top: 0; left: 0;
+  pointer-events: none;
+  z-index: 2; /* Between grid and nodes */
+  opacity: 0.8;
+  mix-blend-mode: screen;
+}
+
 .map-bounds {
   position: absolute; top: 0; left: 0;
   border: 6px solid rgba(0, 229, 255, 0.3);
