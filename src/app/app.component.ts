@@ -57,7 +57,7 @@ export interface TroopMovement {
 })
 export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
   showSplash = true;
-  gameState: 'menu' | 'playing' | 'gameover' | 'simulation' | 'hosting' | 'joining' = 'menu';
+  gameState: 'menu' | 'playing' | 'gameover' | 'simulation' | 'hosting' | 'joining' | 'settings' = 'menu';
   
   MAP_WIDTH = 4000;
   MAP_HEIGHT = 4000;
@@ -88,6 +88,14 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
   initialPinchDistance = 0;
   initialScale = 1;
 
+  // Settings & Performance
+  targetFPS: 30 | 60 = 60;
+  resolutionScale: number = 1.0; // 1.0 = Native, 0.5 = Low
+  visualQuality: 'high' | 'low' = 'high'; // Low disables the heavy canvas blur/frontlines
+  frameInterval = 1000 / 60;
+  lastFrameTime = 0;
+  mapType: 'standard' | 'chokepoint' | 'scattered' = 'standard';
+
   // Multiplayer
   peer: Peer | null = null;
   conn: any = null;
@@ -112,14 +120,62 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
   };
 
   ngOnInit() {
+    this.autoDetectPerformance();
     setTimeout(() => {
       this.showSplash = false;
       this.centerCamera();
     }, 3000);
   }
 
+  autoDetectPerformance() {
+    // Basic heuristic: Higher device pixel ratio often means a high-end device, 
+    // but mobile rendering large canvases is expensive.
+    const dpr = window.devicePixelRatio || 1;
+    if (window.innerWidth < 800) {
+      // Mobile device estimation
+      this.resolutionScale = dpr > 2 ? 0.5 : 0.75; // Downscale canvas heavily on high DPR mobile screens
+      this.targetFPS = 30; // Default to 30 for battery/heat on mobile
+      this.visualQuality = 'low'; // Default low for mobile
+    } else {
+      // Desktop/Tablet
+      this.resolutionScale = 1.0;
+      this.targetFPS = 60;
+      this.visualQuality = 'high';
+    }
+    this.updateFrameInterval();
+  }
+
+  updateFrameInterval() {
+    this.frameInterval = 1000 / this.targetFPS;
+  }
+
+  setFPS(fps: 30 | 60) {
+    this.targetFPS = fps;
+    this.updateFrameInterval();
+  }
+
+  setQuality(q: 'high' | 'low') {
+    this.visualQuality = q;
+  }
+
+  openSettings() {
+    this.gameState = 'settings';
+  }
+
+  closeSettings() {
+    this.gameState = 'menu';
+    // Force canvas resize if needed when returning
+    if (this.territoryCanvas) {
+      this.territoryCanvas.nativeElement.width = this.MAP_WIDTH * this.resolutionScale;
+      this.territoryCanvas.nativeElement.height = this.MAP_HEIGHT * this.resolutionScale;
+    }
+  }
+
   ngAfterViewInit() {
-    // Canvas might not be available immediately if not in DOM, but we handle it in tick()
+    if (this.territoryCanvas) {
+      this.territoryCanvas.nativeElement.width = this.MAP_WIDTH * this.resolutionScale;
+      this.territoryCanvas.nativeElement.height = this.MAP_HEIGHT * this.resolutionScale;
+    }
   }
 
   ngOnDestroy() {
@@ -205,42 +261,70 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
     }
   }
 
-  // --- GAME START ---
-  startGame(mode: 'player' | 'simulation' = 'player') {
-    this.gameState = mode === 'simulation' ? 'simulation' : 'playing';
-    this.isMultiplayer = this.conn !== null;
-    this.myFaction = this.isHost || !this.isMultiplayer ? 'player' : 'enemy';
+  // --- GAME START & MAP GENERATION ---
+  generateMap(mode: 'player' | 'simulation') {
+    const mapTypes: ('standard' | 'chokepoint' | 'scattered')[] = ['standard', 'chokepoint', 'scattered'];
+    this.mapType = mapTypes[Math.floor(Math.random() * mapTypes.length)];
 
-    // Reduced starting troops and capacities to match slower pacing
-    if (mode === 'player') {
+    let pOwner: 'player' | 'ai_micro' = mode === 'player' ? 'player' : 'ai_micro';
+    let eOwner: 'enemy' | 'ai_macro' = mode === 'player' ? 'enemy' : 'ai_macro';
+
+    if (this.mapType === 'standard') {
       this.nodes = [
-        { id: 1, x: 800, y: 3200, troops: 5000, owner: 'player', type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
-        { id: 2, x: 3200, y: 800, troops: 5000, owner: 'enemy', type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+        { id: 1, x: 800, y: 3200, troops: 5000, owner: pOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+        { id: 2, x: 3200, y: 800, troops: 5000, owner: eOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
         { id: 3, x: 2000, y: 2000, troops: 10000, owner: 'neutral', type: 'fortress', level: 2, capacity: 50000, pushX:0, pushY:0 },
         { id: 4, x: 800, y: 800, troops: 2000, owner: 'neutral', type: 'forge', level: 1, capacity: 15000, pushX:0, pushY:0 },
         { id: 5, x: 3200, y: 3200, troops: 2000, owner: 'neutral', type: 'forge', level: 1, capacity: 15000, pushX:0, pushY:0 },
         { id: 6, x: 2000, y: 800, troops: 3000, owner: 'neutral', type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
         { id: 7, x: 2000, y: 3200, troops: 3000, owner: 'neutral', type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 }
       ];
-    } else {
+    } else if (this.mapType === 'chokepoint') {
       this.nodes = [
-        { id: 1, x: 400, y: 400, troops: 5000, owner: 'ai_micro', type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
-        { id: 2, x: 3600, y: 3600, troops: 5000, owner: 'ai_macro', type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+        { id: 1, x: 500, y: 2000, troops: 5000, owner: pOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+        { id: 2, x: 3500, y: 2000, troops: 5000, owner: eOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
         { id: 3, x: 2000, y: 2000, troops: 15000, owner: 'neutral', type: 'fortress', level: 3, capacity: 80000, pushX:0, pushY:0 },
-        { id: 4, x: 400, y: 2000, troops: 2000, owner: 'neutral', type: 'forge', level: 1, capacity: 15000, pushX:0, pushY:0 },
-        { id: 5, x: 2000, y: 400, troops: 2000, owner: 'neutral', type: 'forge', level: 1, capacity: 15000, pushX:0, pushY:0 },
-        { id: 6, x: 3600, y: 2000, troops: 2000, owner: 'neutral', type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
-        { id: 7, x: 2000, y: 3600, troops: 2000, owner: 'neutral', type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+        { id: 4, x: 1200, y: 1000, troops: 3000, owner: 'neutral', type: 'forge', level: 1, capacity: 20000, pushX:0, pushY:0 },
+        { id: 5, x: 1200, y: 3000, troops: 3000, owner: 'neutral', type: 'forge', level: 1, capacity: 20000, pushX:0, pushY:0 },
+        { id: 6, x: 2800, y: 1000, troops: 3000, owner: 'neutral', type: 'forge', level: 1, capacity: 20000, pushX:0, pushY:0 },
+        { id: 7, x: 2800, y: 3000, troops: 3000, owner: 'neutral', type: 'forge', level: 1, capacity: 20000, pushX:0, pushY:0 }
+      ];
+    } else if (this.mapType === 'scattered') {
+      this.nodes = [
+        { id: 1, x: 400, y: 400, troops: 5000, owner: pOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+        { id: 2, x: 3600, y: 3600, troops: 5000, owner: eOwner, type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+        { id: 3, x: 1000, y: 3000, troops: 3000, owner: 'neutral', type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+        { id: 4, x: 3000, y: 1000, troops: 3000, owner: 'neutral', type: 'city', level: 1, capacity: 20000, pushX:0, pushY:0 },
+        { id: 5, x: 2000, y: 1500, troops: 5000, owner: 'neutral', type: 'fortress', level: 1, capacity: 30000, pushX:0, pushY:0 },
+        { id: 6, x: 2000, y: 2500, troops: 5000, owner: 'neutral', type: 'fortress', level: 1, capacity: 30000, pushX:0, pushY:0 },
+        { id: 7, x: 1500, y: 2000, troops: 2000, owner: 'neutral', type: 'forge', level: 1, capacity: 15000, pushX:0, pushY:0 },
+        { id: 8, x: 2500, y: 2000, troops: 2000, owner: 'neutral', type: 'forge', level: 1, capacity: 15000, pushX:0, pushY:0 }
       ];
     }
+  }
+
+  startGame(mode: 'player' | 'simulation' = 'player') {
+    this.gameState = mode === 'simulation' ? 'simulation' : 'playing';
+    this.isMultiplayer = this.conn !== null;
+    this.myFaction = this.isHost || !this.isMultiplayer ? 'player' : 'enemy';
+
+    this.generateMap(mode);
 
     this.centerCamera();
     this.movements = [];
     this.lastTick = performance.now();
+    this.lastFrameTime = this.lastTick;
     this.lastMicroTick = this.lastTick;
     this.lastMacroTick = this.lastTick;
     this.lastSyncTick = this.lastTick;
     this.lastCanvasDraw = this.lastTick;
+    
+    // Resize canvas based on setting before starting
+    if (this.territoryCanvas) {
+      this.territoryCanvas.nativeElement.width = this.MAP_WIDTH * this.resolutionScale;
+      this.territoryCanvas.nativeElement.height = this.MAP_HEIGHT * this.resolutionScale;
+    }
+
     this.gameLoop = requestAnimationFrame((t) => this.tick(t));
   }
 
@@ -256,14 +340,26 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
 
   // --- GAME LOOP ---
   tick(time: number) {
-    const dt = (time - this.lastTick) / 1000;
+    if (this.gameState !== 'playing' && this.gameState !== 'simulation') return;
+
+    // FPS Throttling
+    const elapsed = time - this.lastFrameTime;
+    if (elapsed < this.frameInterval) {
+      this.gameLoop = requestAnimationFrame((t) => this.tick(t));
+      return;
+    }
+    
+    // Calculate dt based on actual elapsed time, but cap it to avoid huge jumps if tab was inactive
+    let dt = elapsed / 1000;
+    if (dt > 0.1) dt = 0.1; 
+    
+    this.lastFrameTime = time - (elapsed % this.frameInterval);
     this.lastTick = time;
 
     if (!this.isMultiplayer || this.isHost) {
       
       this.nodes.forEach(n => {
         if (n.owner !== 'neutral') {
-          // SLOWED PACING: Generation rate massively reduced for grand strategy feel
           let genRate = 150 * n.level; 
           if (n.type === 'forge') genRate *= 0.5;
           if (n.type === 'fortress') genRate *= 0.3;
@@ -272,7 +368,7 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
           if (n.troops > n.capacity) n.troops -= (n.troops - n.capacity) * 0.05 * dt; 
         }
 
-        n.pushX *= 0.85; n.pushY *= 0.85; // Faster friction for realistic push
+        n.pushX *= 0.85; n.pushY *= 0.85; 
         n.x = Math.max(40, Math.min(this.MAP_WIDTH - 40, n.x + n.pushX * dt));
         n.y = Math.max(40, Math.min(this.MAP_HEIGHT - 40, n.y + n.pushY * dt));
       });
@@ -280,7 +376,6 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
       for (let i = this.movements.length - 1; i >= 0; i--) {
         const m = this.movements[i];
         if (!m.combating) {
-          // SLOWED PACING: Movement speeds reduced to allow interceptions and flanking
           const speed = m.unitType === 'heavy' ? 100 : 250;
           m.progress += speed * dt;
           if (m.progress >= m.totalDistance - 40) {
@@ -311,15 +406,17 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
       }
     }
 
-    // Update Territory Visuals every 100ms for performance
-    if (time - this.lastCanvasDraw > 100) {
+    // Update Territory Visuals
+    if (this.visualQuality === 'high' && time - this.lastCanvasDraw > 150) {
        this.drawTerritoryMap();
        this.lastCanvasDraw = time;
+    } else if (this.visualQuality === 'low' && this.ctx) {
+       // Clear canvas if switched to low
+       const canvas = this.territoryCanvas.nativeElement;
+       this.ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
 
-    if (this.gameState === 'playing' || this.gameState === 'simulation') {
-      this.gameLoop = requestAnimationFrame((t) => this.tick(t));
-    }
+    this.gameLoop = requestAnimationFrame((t) => this.tick(t));
   }
 
   // --- FRONTLINE / TERRITORY VISUALIZATION ---
@@ -329,34 +426,33 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
     if (!this.ctx) return;
 
     const canvas = this.territoryCanvas.nativeElement;
-    // Clear canvas
     this.ctx.clearRect(0, 0, canvas.width, canvas.height);
-    this.ctx.globalCompositeOperation = 'lighter'; // Blends colors smoothly to form frontlines
+    this.ctx.globalCompositeOperation = 'lighter'; 
 
-    // Draw influence circles for Nodes
+    const scale = this.resolutionScale;
+
     this.nodes.forEach(n => {
-       if (n.owner === 'neutral') return; // Neutrals exert minimal territory pressure
+       if (n.owner === 'neutral') return; 
+       const radius = (200 + (n.troops / n.capacity) * 300) * scale; 
+       const cx = n.x * scale;
+       const cy = n.y * scale;
        
-       // Influence radius based on troops and capacity
-       const radius = 200 + (n.troops / n.capacity) * 300; 
-       
-       const gradient = this.ctx!.createRadialGradient(n.x, n.y, 0, n.x, n.y, radius);
+       const gradient = this.ctx!.createRadialGradient(cx, cy, 0, cx, cy, radius);
        gradient.addColorStop(0, this.factionColors[n.owner]);
        gradient.addColorStop(1, 'rgba(0,0,0,0)');
        
        this.ctx!.fillStyle = gradient;
        this.ctx!.beginPath();
-       this.ctx!.arc(n.x, n.y, radius, 0, Math.PI * 2);
+       this.ctx!.arc(cx, cy, radius, 0, Math.PI * 2);
        this.ctx!.fill();
     });
 
-    // Draw influence circles for moving troops (Swarm presence pushes frontlines)
     this.movements.forEach(m => {
        if (m.owner === 'neutral') return;
-       const currentX = m.startX + ((m.targetX - m.startX) * (m.progress / m.totalDistance));
-       const currentY = m.startY + ((m.targetY - m.startY) * (m.progress / m.totalDistance));
+       const currentX = (m.startX + ((m.targetX - m.startX) * (m.progress / m.totalDistance))) * scale;
+       const currentY = (m.startY + ((m.targetY - m.startY) * (m.progress / m.totalDistance))) * scale;
        
-       const radius = 100 + (m.amount / 20000) * 150;
+       const radius = (100 + (m.amount / 20000) * 150) * scale;
        
        const gradient = this.ctx!.createRadialGradient(currentX, currentY, 0, currentX, currentY, radius);
        gradient.addColorStop(0, this.factionColors[m.owner]);
@@ -399,13 +495,12 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
     const dirY = len > 0 ? dy / len : 0;
 
     if (target.owner === movement.owner) {
-      const transferRate = 5000 * dt; // Slowed reinforcement rate
+      const transferRate = 5000 * dt; 
       const amountToTransfer = Math.min(movement.amount, transferRate);
       target.troops += amountToTransfer;
       movement.amount -= amountToTransfer;
       if (movement.amount <= 0) this.movements.splice(index, 1);
     } else {
-      // SLOWED PACING: Combat is a grinding war of attrition now, not an instant wipe
       let combatRate = 800 * dt; 
       let damageToTarget = combatRate;
       let damageToSwarm = combatRate;
@@ -446,7 +541,7 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
 
   upgradeNodeCore(node: GameNode) {
     if (node.type === 'camp') return;
-    const cost = 5000 * node.level; // Adjusted upgrade cost for slower economy
+    const cost = 5000 * node.level; 
     if (node.troops >= cost && node.level < 5) {
       node.troops -= cost;
       node.level++;
@@ -454,9 +549,9 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
     }
   }
 
-  // --- AI (Slower Reaction Times for Strategic Feel) ---
+  // --- AI ---
   runBasicEnemyAI() {
-    if (Math.random() < 0.005) { // Slower decision making
+    if (Math.random() < 0.005) { 
       const enemies = this.nodes.filter(n => n.owner === 'enemy');
       if (enemies.length > 0) {
         const source = enemies[Math.floor(Math.random() * enemies.length)];
@@ -474,7 +569,7 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   runSimulationAI(time: number) {
-    if (time - this.lastMicroTick > 1500) { // Micro acts every 1.5s instead of 300ms
+    if (time - this.lastMicroTick > 1500) { 
       this.lastMicroTick = time;
       const microNodes = this.nodes.filter(n => n.owner === 'ai_micro');
       microNodes.forEach(source => {
@@ -490,7 +585,7 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
       });
     }
 
-    if (time - this.lastMacroTick > 6000) { // Macro acts every 6s instead of 2.5s
+    if (time - this.lastMacroTick > 6000) { 
       this.lastMacroTick = time;
       const macroNodes = this.nodes.filter(n => n.owner === 'ai_macro');
       macroNodes.forEach(n => {

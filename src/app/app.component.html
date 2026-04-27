@@ -37,9 +37,40 @@
       <button class="btn-sim" (click)="startGame('simulation')">
         <span class="icon">🤖</span> Simulador de IAs
       </button>
+      <button class="btn-secondary" (click)="openSettings()">
+        <span class="icon">⚙️</span> Ajustes
+      </button>
     </div>
     
     <button class="btn-secondary mt-auto" (click)="openBabylon()">Créditos a BABYLON.IA</button>
+  </div>
+
+  <!-- SETTINGS MENU -->
+  <div *ngIf="!showSplash && gameState === 'settings'" class="menu-screen" @uiSlideUp>
+    <h2 class="neon-text">AJUSTES DEL SISTEMA</h2>
+    
+    <div class="settings-panel glass-panel">
+      <div class="setting-row">
+        <span>Rendimiento (FPS):</span>
+        <button [class.active]="targetFPS === 30" (click)="setFPS(30)">30 FPS</button>
+        <button [class.active]="targetFPS === 60" (click)="setFPS(60)">60 FPS</button>
+      </div>
+
+      <div class="setting-row">
+        <span>Calidad Visual:</span>
+        <button [class.active]="visualQuality === 'low'" (click)="setQuality('low')">Baja (Rápido)</button>
+        <button [class.active]="visualQuality === 'high'" (click)="setQuality('high')">Alta (Líneas de frente)</button>
+      </div>
+
+      <div class="setting-row">
+        <span>Escala de Resolución:</span>
+        <button [class.active]="resolutionScale === 0.5" (click)="resolutionScale = 0.5">50%</button>
+        <button [class.active]="resolutionScale === 0.75" (click)="resolutionScale = 0.75">75%</button>
+        <button [class.active]="resolutionScale === 1.0" (click)="resolutionScale = 1.0">100%</button>
+      </div>
+    </div>
+    
+    <button class="btn-primary" (click)="closeSettings()" style="margin-top: 30px;">Guardar y Volver</button>
   </div>
 
   <!-- P2P HOSTING -->
