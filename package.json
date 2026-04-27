@@ -8,8 +8,8 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "electron:build": "ng build --base-href ./ && npx electron-packager . DotsStrategy --platform=win32 --arch=x64 --out=release --overwrite",
-    "electron:build:mac": "ng build --base-href ./ && npx electron-packager . DotsStrategy --platform=darwin --arch=x64 --out=release --overwrite"
+    "electron:build": "ng build --base-href ./ && npx electron-packager . DotsStrategy --platform=win32 --arch=x64 --out=release --overwrite --prune=true --ignore=\"^/src|^/android|^/node_modules|\\.idea|\\.vscode\" && node build-installer.js",
+    "electron:build:mac": "ng build --base-href ./ && electron-builder --mac --x64"
   },
   "build": {
     "appId": "com.babylonia.dotsstrategy",
@@ -17,8 +17,16 @@
     "directories": {
       "output": "release/"
     },
+    "files": [
+      "main.js",
+      "dist/**/*",
+      "package.json"
+    ],
     "win": {
-      "target": "dir"
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg"
     }
   },
   "private": true,
@@ -44,15 +52,19 @@
     "@angular/cli": "^18.2.21",
     "@angular/compiler-cli": "^18.2.0",
     "@types/jasmine": "~5.1.0",
+    "canvas": "^3.2.3",
     "electron": "^41.3.0",
     "electron-builder": "^26.8.1",
     "electron-packager": "^17.1.2",
+    "electron-winstaller": "^5.4.0",
     "jasmine-core": "~5.2.0",
     "karma": "~6.4.0",
     "karma-chrome-launcher": "~3.2.0",
     "karma-coverage": "~2.2.0",
     "karma-jasmine": "~5.1.0",
     "karma-jasmine-html-reporter": "~2.1.0",
+    "png-to-ico": "^3.0.1",
+    "png2icons": "^2.0.1",
     "typescript": "~5.5.2"
   }
 }

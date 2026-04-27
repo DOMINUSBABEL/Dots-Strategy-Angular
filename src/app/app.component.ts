@@ -4,7 +4,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import Peer from 'peerjs';
 
-export type NodeType = 'city' | 'fortress' | 'forge' | 'camp';
+export type NodeType = 'city' | 'fortress' | 'forge' | 'camp' | 'radar' | 'portal';
 export type UnitType = 'light' | 'heavy';
 
 export interface GameNode {
@@ -12,6 +12,16 @@ export interface GameNode {
   owner: 'player' | 'enemy' | 'neutral' | 'ai_macro' | 'ai_micro';
   type: NodeType; level: number; capacity: number;
   pushX: number; pushY: number;
+  linkedPortalId?: number; // For portals
+  supplyConnected?: boolean; // For supply line logic
+}
+
+export interface Hazard {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  type: 'ion_storm';
 }
 
 export interface Flow {
@@ -19,6 +29,7 @@ export interface Flow {
   targetX: number; targetY: number; totalTroops: number; troopsSent: number;
   owner: 'player' | 'enemy' | 'neutral' | 'ai_macro' | 'ai_micro';
   unitType: UnitType; fractionalAccumulator: number; troopsPerDot: number; drainRate: number;
+  isSupplyLine?: boolean;
 }
 
 export interface Dot {
@@ -300,15 +311,25 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
 
   updateLogic(dt: number, time: number) {
     if (!this.isMultiplayer || this.isHost) {
+      
+      // Node logic & economy
       this.nodes.forEach(n => {
-        if (n.owner !== 'neutral') {
+        if (n.owner !== 'neutral' && n.type !== 'portal' && n.type !== 'radar') {
           let genRate = 200 * n.level; 
           if (n.type === 'forge') genRate *= 0.5;
-          if (n.type === 'fortress') genRate *= 0.3;
+          if (n.type === 'fortress') {
+            // Supply Line buff: If a forge sends troops continuously, fortress generates faster
+            if (n.supplyConnected) genRate *= 2.0; 
+            else genRate *= 0.3;
+          }
           if (n.type === 'camp') genRate *= 0.0;
           n.troops += genRate * dt; 
           if (n.troops > n.capacity) n.troops -= (n.troops - n.capacity) * 0.1 * dt; 
         }
+        
+        // Reset supply connection status every frame, flows will re-assert it
+        n.supplyConnected = false; 
+
         n.pushX *= 0.85; n.pushY *= 0.85; 
         n.x = Math.max(60, Math.min(this.MAP_WIDTH - 60, n.x + n.pushX * dt));
         n.y = Math.max(60, Math.min(this.MAP_HEIGHT - 60, n.y + n.pushY * dt));
@@ -318,7 +339,16 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
     for (let i = this.flows.length - 1; i >= 0; i--) {
       const flow = this.flows[i];
       const source = this.nodes.find(n => n.id === flow.sourceId);
+      
       if (!source || source.owner !== flow.owner) { this.flows.splice(i, 1); continue; }
+
+      // Supply Line Assertion
+      if (source.type === 'forge') {
+         const tgt = this.nodes.find(n => n.id === flow.targetId);
+         if (tgt && tgt.type === 'fortress' && tgt.owner === source.owner) {
+             tgt.supplyConnected = true;
+         }
+      }
 
       const remaining = flow.totalTroops - flow.troopsSent;
       if (remaining <= 0) { this.flows.splice(i, 1); continue; }
@@ -360,7 +390,36 @@ export class AppComponent implements OnInit, OnDestroy, AfterViewInit {
            targetNode = this.createCamp(dot);
            this.dots.forEach(d => { if (d.flowId === dot.flowId) d.targetId = targetNode!.id; });
            this.flows.forEach(f => { if (f.id === dot.flowId) f.targetId = targetNode!.id; });
-         } else if (targetNode) { this.processDotCombat(dot, targetNode); }
+         } else if (targetNode) { 
+           // Portal Teleportation
+           if (targetNode.type === 'portal' && targetNode.linkedPortalId) {
+              const exit = this.nodes.find(n => n.id === targetNode!.linkedPortalId);
+              if (exit) {
+                  dot.x = exit.x; dot.y = exit.y;
+                  // Look for nearest enemy to attack
+                  let nearestEnemy: GameNode | null = null; let minDist = Infinity;
+                  this.nodes.forEach(n => {
+                     if(n.owner !== dot.owner && n.owner !== 'neutral' && n.type !== 'portal' && n.type !== 'radar') {
+                        const ed = Math.hypot(n.x - exit.x, n.y - exit.y);
+                        if (ed < minDist) { minDist = ed; nearestEnemy = n; }
+                     }
+                  });
+                  if (nearestEnemy) {
+                      const tgt = nearestEnemy as GameNode;
+                      dot.targetId = tgt.id; dot.targetX = tgt.x; dot.targetY = tgt.y;
+                      this.flows.forEach(f => { if (f.id === dot.flowId) { f.targetId = tgt.id; f.targetX = tgt.x; f.targetY = tgt.y; } });
+                  } else {
+                     // No enemies found? Just camp at portal exit.
+                     const camp = this.createCamp({ targetX: exit.x + 100, targetY: exit.y, owner: dot.owner } as any);
+                     dot.targetId = camp.id;
+                     this.flows.forEach(f => { if (f.id === dot.flowId) f.targetId = camp.id; });
+                  }
+                  continue; // Skip combat processing this tick because we just teleported
+              }
+           } else {
+             this.processDotCombat(dot, targetNode); 
+           }
+         }
          dot.troops = 0; 
       } else {
          dot.x += (dx / dist) * speed; dot.y += (dy / dist) * speed;
