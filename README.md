@@ -40,25 +40,26 @@ Enfrenta a dos perfiles de Inteligencia Artificial para probar tácticas:
 * Escala de resolución dinámica del Canvas de territorio (50%, 75%, 100%) para mantener el rendimiento fluido en dispositivos de gama baja.
 * UI Sci-Fi con "Glassmorphism" y fuentes `Orbitron` / `Rajdhani`.
 
-## 📱 Compilación a APK (Android 14+)
+## 📱 Compilación y Despliegue Multiplataforma
 
-El código fuente está preparado para compilarse nativamente usando las herramientas de Android SDK.
+El código fuente está preparado para compilarse nativamente para múltiples plataformas usando una sola base de código (Angular + Capacitor + Electron).
 
-1. Instalar dependencias Node:
-   ```bash
-   npm install
-   ```
-2. Construir la aplicación web Angular:
-   ```bash
-   npm run build
-   ```
-3. Sincronizar los assets con el proyecto de Android (Capacitor):
-   ```bash
-   npx cap sync android
-   ```
-4. Compilar el APK (Usando Android Studio o Gradle CLI):
-   * Abre la carpeta `/android` en Android Studio y ejecuta `Build -> Build APK(s)`.
-   * O usa Gradle desde la terminal: `cd android && ./gradlew assembleDebug`
+### 1. Android (APK)
+1. Instalar dependencias Node: `npm install`
+2. Construir la aplicación web Angular: `npm run build`
+3. Sincronizar los assets: `npx cap sync android`
+4. Compilar el APK: Abre la carpeta `/android` en Android Studio y ejecuta `Build -> Build APK(s)`, o usa Gradle: `cd android && ./gradlew assembleDebug`
+
+### 2. Windows (EXE)
+El juego utiliza un motor embebido de Electron de alto rendimiento.
+1. Compilar para Windows: `npm run electron:build`
+2. El ejecutable portable quedará listo dentro de la carpeta `release/DotsStrategy-win32-x64/`.
+
+### 3. Mac (macOS .APP)
+Para mantener el Crossplay en ecosistemas de Apple, debes compilar el código *desde una computadora Mac* (ya que requiere la creación de *Symlinks* nativos de Unix).
+1. En tu Mac, clona el repositorio y ejecuta `npm install`.
+2. Compila el binario de Mac: `npm run electron:build:mac`
+3. La aplicación de Mac quedará generada en la carpeta `release/DotsStrategy-darwin-x64/`.
 
 ## 👨‍💻 Créditos
 Desarrollo de la experiencia y mecánicas orquestado por **BABYLON.IA**.

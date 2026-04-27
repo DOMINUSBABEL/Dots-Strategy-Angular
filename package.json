@@ -8,7 +8,8 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "electron:build": "ng build --base-href ./ && npx electron-packager . DotsStrategy --platform=win32 --arch=x64 --out=release --overwrite"
+    "electron:build": "ng build --base-href ./ && npx electron-packager . DotsStrategy --platform=win32 --arch=x64 --out=release --overwrite",
+    "electron:build:mac": "ng build --base-href ./ && npx electron-packager . DotsStrategy --platform=darwin --arch=x64 --out=release --overwrite"
   },
   "build": {
     "appId": "com.babylonia.dotsstrategy",
